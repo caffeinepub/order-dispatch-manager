@@ -12,9 +12,7 @@ import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-import Migration "migration";
 
-(with migration = Migration.run)
 actor {
   // Type Definitions
   type City = Text;
@@ -130,6 +128,30 @@ actor {
   // User Authentication System
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
+
+  // NEW: hasUsers - no auth required, returns true if any users exist
+  public query func hasUsers() : async Bool {
+    users.size() > 0;
+  };
+
+  // NEW: bootstrapAdmin - only works when users table is empty, registers caller as first Admin
+  public shared ({ caller }) func bootstrapAdmin(name : Text, email : Text) : async AppUser {
+    if (users.size() > 0) {
+      Runtime.trap("Bootstrap already complete: users already exist");
+    };
+    let principalId = caller.toText();
+    let newUser : AppUser = {
+      id = nextUserId;
+      name;
+      email;
+      role = #admin;
+      principalId;
+    };
+    users.add(nextUserId, newUser);
+    nextUserId += 1;
+    AccessControl.assignRole(accessControlState, caller, caller, #admin);
+    newUser;
+  };
 
   // USER PROFILE MANAGEMENT (Required by frontend)
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {

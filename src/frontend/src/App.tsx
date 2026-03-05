@@ -1,4 +1,6 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -9,9 +11,18 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, Loader2, LogOut, ShieldX, Truck } from "lucide-react";
-import React from "react";
+import {
+  Bell,
+  Loader2,
+  LogOut,
+  ShieldCheck,
+  ShieldX,
+  Truck,
+} from "lucide-react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { BottomNav } from "./components/BottomNav";
+import { useActor } from "./hooks/useActor";
 import { CurrentUserProvider, useCurrentUser } from "./hooks/useCurrentUser";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useUnreadNotificationCount } from "./hooks/useQueries";
@@ -24,6 +35,194 @@ import { OrdersList } from "./pages/OrdersList";
 import { PendingDispatch } from "./pages/PendingDispatch";
 import { Transporters } from "./pages/Transporters";
 import { Users } from "./pages/Users";
+
+// ─── Bootstrap Admin Setup Screen ────────────────────────────────────────────
+
+function BootstrapAdminScreen({ onSuccess }: { onSuccess: () => void }) {
+  const { actor } = useActor();
+  const { login, isLoggingIn, identity } = useInternetIdentity();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Not logged in yet — prompt login
+  if (!identity) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col items-center mb-10">
+            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-card mb-4">
+              <Truck className="h-8 w-8 text-primary-foreground" />
+            </div>
+            <h1 className="text-2xl font-display font-bold text-foreground text-center">
+              Order Dispatch Manager
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1.5 text-center">
+              First-time setup
+            </p>
+          </div>
+
+          <div className="bg-card rounded-2xl border border-border shadow-card p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck
+                className="h-5 w-5 text-accent-foreground mt-0.5 shrink-0"
+                style={{ color: "oklch(var(--accent))" }}
+              />
+              <div className="space-y-1">
+                <h2 className="font-semibold text-foreground text-sm">
+                  No admin account exists yet
+                </h2>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Log in with Internet Identity to set up your admin account and
+                  get started.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              data-ocid="bootstrap.login_button"
+              onClick={login}
+              disabled={isLoggingIn}
+              className="w-full h-12 text-base font-semibold rounded-xl shadow-card"
+            >
+              {isLoggingIn ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Login with Internet Identity"
+              )}
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground text-center mt-6">
+            This screen only appears once — during initial setup.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Logged in — show bootstrap form
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!actor) return;
+    if (!name.trim() || !email.trim()) {
+      setError("Please fill in both fields.");
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await actor.bootstrapAdmin(name.trim(), email.trim());
+      onSuccess();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-10">
+          <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-card mb-4">
+            <ShieldCheck className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-display font-bold text-foreground text-center">
+            Setup Admin Account
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1.5 text-center">
+            You are the first user. You will be registered as Admin.
+          </p>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="bg-card rounded-2xl border border-border shadow-card p-6 space-y-5"
+        >
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="bootstrap-name"
+              className="text-sm font-medium text-foreground"
+            >
+              Full Name
+            </Label>
+            <Input
+              id="bootstrap-name"
+              data-ocid="bootstrap.name_input"
+              type="text"
+              placeholder="e.g. Rahul Sharma"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+              className="h-12 rounded-xl text-base"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="bootstrap-email"
+              className="text-sm font-medium text-foreground"
+            >
+              Email Address
+            </Label>
+            <Input
+              id="bootstrap-email"
+              data-ocid="bootstrap.email_input"
+              type="email"
+              placeholder="e.g. rahul@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="h-12 rounded-xl text-base"
+            />
+          </div>
+
+          {error && (
+            <div
+              data-ocid="bootstrap.error_state"
+              className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3"
+            >
+              <p className="text-xs text-destructive font-medium">{error}</p>
+            </div>
+          )}
+
+          <Button
+            data-ocid="bootstrap.submit_button"
+            type="submit"
+            disabled={isSubmitting || !actor}
+            className="w-full h-12 text-base font-semibold rounded-xl shadow-card"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2
+                  data-ocid="bootstrap.loading_state"
+                  className="mr-2 h-5 w-5 animate-spin"
+                />
+                Creating account...
+              </>
+            ) : (
+              "Create Admin Account"
+            )}
+          </Button>
+        </form>
+
+        <p className="text-xs text-muted-foreground text-center mt-6">
+          After setup, you can add other team members from the Users page.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // ─── Auth Gate ───────────────────────────────────────────────────────────────
 
@@ -159,8 +358,42 @@ function NotificationBell() {
 function AppShellInner() {
   const { identity, clear, isInitializing } = useInternetIdentity();
   const { currentUser, isLoadingUser } = useCurrentUser();
+  const { actor, isFetching: isActorFetching } = useActor();
 
-  if (isInitializing) {
+  // Bootstrap check: does the system have any users yet?
+  const [hasUsers, setHasUsers] = useState<boolean | null>(null);
+  const [isCheckingUsers, setIsCheckingUsers] = useState(true);
+
+  useEffect(() => {
+    if (!actor || isActorFetching) return;
+
+    let cancelled = false;
+    setIsCheckingUsers(true);
+
+    void actor
+      .hasUsers()
+      .then((result) => {
+        if (!cancelled) {
+          setHasUsers(result);
+          setIsCheckingUsers(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // If the call fails, assume users exist to avoid bypassing auth
+          setHasUsers(true);
+          setIsCheckingUsers(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [actor, isActorFetching]);
+
+  const isBooting = isInitializing || isActorFetching || isCheckingUsers;
+
+  if (isBooting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="space-y-4 w-full max-w-lg px-4">
@@ -169,6 +402,18 @@ function AppShellInner() {
           <Skeleton className="h-32 w-full rounded-xl" />
         </div>
       </div>
+    );
+  }
+
+  // No users in the system yet — show bootstrap screen
+  if (hasUsers === false) {
+    return (
+      <BootstrapAdminScreen
+        onSuccess={() => {
+          // Reload the page so the app reinitialises with the new admin user
+          window.location.reload();
+        }}
+      />
     );
   }
 

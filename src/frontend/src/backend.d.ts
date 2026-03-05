@@ -98,6 +98,7 @@ export interface backendInterface {
     addTransporter(name: string, contactNumber: string, city: City): Promise<Transporter>;
     addUser(name: string, email: string, role: UserRole, principalId: string): Promise<AppUser>;
     assignCallerUserRole(user: Principal, role: UserRole__1): Promise<void>;
+    bootstrapAdmin(name: string, email: string): Promise<AppUser>;
     createOrder(salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, createdBy: string, priority: OrderPriority): Promise<Order | null>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole__1>;
@@ -129,6 +130,7 @@ export interface backendInterface {
     getUserByPrincipal(principalText: string): Promise<AppUser | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getUsers(): Promise<Array<AppUser>>;
+    hasUsers(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
     markNotificationRead(id: bigint): Promise<void>;
     removeUser(id: bigint): Promise<void>;

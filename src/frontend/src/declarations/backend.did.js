@@ -135,6 +135,7 @@ export const idlService = IDL.Service({
   'addTransporter' : IDL.Func([IDL.Text, IDL.Text, City], [Transporter], []),
   'addUser' : IDL.Func([IDL.Text, IDL.Text, UserRole, IDL.Text], [AppUser], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole__1], [], []),
+  'bootstrapAdmin' : IDL.Func([IDL.Text, IDL.Text], [AppUser], []),
   'createOrder' : IDL.Func(
       [
         IDL.Text,
@@ -198,6 +199,7 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getUsers' : IDL.Func([], [IDL.Vec(AppUser)], ['query']),
+  'hasUsers' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
   'removeUser' : IDL.Func([IDL.Nat], [], []),
@@ -370,6 +372,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole__1], [], []),
+    'bootstrapAdmin' : IDL.Func([IDL.Text, IDL.Text], [AppUser], []),
     'createOrder' : IDL.Func(
         [
           IDL.Text,
@@ -433,6 +436,7 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getUsers' : IDL.Func([], [IDL.Vec(AppUser)], ['query']),
+    'hasUsers' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
     'removeUser' : IDL.Func([IDL.Nat], [], []),

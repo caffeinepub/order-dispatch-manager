@@ -120,6 +120,7 @@ export interface _SERVICE {
   'addTransporter' : ActorMethod<[string, string, City], Transporter>,
   'addUser' : ActorMethod<[string, string, UserRole, string], AppUser>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole__1], undefined>,
+  'bootstrapAdmin' : ActorMethod<[string, string], AppUser>,
   'createOrder' : ActorMethod<
     [string, bigint, bigint, number, string, string, OrderPriority],
     [] | [Order]
@@ -160,6 +161,7 @@ export interface _SERVICE {
   'getUserByPrincipal' : ActorMethod<[string], [] | [AppUser]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'getUsers' : ActorMethod<[], Array<AppUser>>,
+  'hasUsers' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'markNotificationRead' : ActorMethod<[bigint], undefined>,
   'removeUser' : ActorMethod<[bigint], undefined>,

@@ -198,6 +198,7 @@ export interface backendInterface {
     addTransporter(name: string, contactNumber: string, city: City): Promise<Transporter>;
     addUser(name: string, email: string, role: UserRole, principalId: string): Promise<AppUser>;
     assignCallerUserRole(user: Principal, role: UserRole__1): Promise<void>;
+    bootstrapAdmin(name: string, email: string): Promise<AppUser>;
     createOrder(salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, createdBy: string, priority: OrderPriority): Promise<Order | null>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole__1>;
@@ -229,6 +230,7 @@ export interface backendInterface {
     getUserByPrincipal(principalText: string): Promise<AppUser | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getUsers(): Promise<Array<AppUser>>;
+    hasUsers(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
     markNotificationRead(id: bigint): Promise<void>;
     removeUser(id: bigint): Promise<void>;
@@ -391,6 +393,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole__1_n14(this._uploadFile, this._downloadFile, arg1));
             return result;
+        }
+    }
+    async bootstrapAdmin(arg0: string, arg1: string): Promise<AppUser> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.bootstrapAdmin(arg0, arg1);
+                return from_candid_AppUser_n10(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.bootstrapAdmin(arg0, arg1);
+            return from_candid_AppUser_n10(this._uploadFile, this._downloadFile, result);
         }
     }
     async createOrder(arg0: string, arg1: bigint, arg2: bigint, arg3: number, arg4: string, arg5: string, arg6: OrderPriority): Promise<Order | null> {
@@ -669,6 +685,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getUsers();
             return from_candid_vec_n35(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async hasUsers(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.hasUsers();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.hasUsers();
+            return result;
         }
     }
     async isCallerAdmin(): Promise<boolean> {
