@@ -1,0 +1,509 @@
+import Array "mo:core/Array";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Text "mo:core/Text";
+import Iter "mo:core/Iter";
+import Time "mo:core/Time";
+import Runtime "mo:core/Runtime";
+import Principal "mo:core/Principal";
+import MixinStorage "blob-storage/Mixin";
+import Storage "blob-storage/Storage";
+import MixinAuthorization "authorization/MixinAuthorization";
+import AccessControl "authorization/access-control";
+import Migration "migration";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+
+(with migration = Migration.run)
+actor {
+  // Type Definitions
+  type City = Text;
+
+  public type OrderStatus = {
+    #pendingDispatch;
+    #packed;
+    #dispatched;
+    #delivered;
+    #unknown;
+  };
+
+  public type UserRole = {
+    #admin;
+    #staff;
+  };
+
+  public type AppUser = {
+    id : Nat;
+    name : Text;
+    email : Text;
+    role : UserRole;
+    principalId : Text;
+  };
+
+  public type Customer = {
+    id : Nat;
+    name : Text;
+    phone : Text;
+    city : City;
+  };
+
+  public type Transporter = {
+    id : Nat;
+    name : Text;
+    contactNumber : Text;
+    city : City;
+  };
+
+  public type Order = {
+    id : Nat;
+    orderNumber : Text;
+    orderDate : Int;
+    salesperson : Text;
+    customerId : Nat;
+    customerName : Text;
+    customerPhone : Text;
+    customerCity : City;
+    transporterId : Nat;
+    transporterName : Text;
+    orderValue : Float;
+    notes : Text;
+    lrNumber : Text;
+    dispatchDate : Text;
+    status : OrderStatus;
+    billPhotoId : Text;
+    lrPhotoId : Text;
+    createdBy : Text;
+    lastUpdatedBy : Text;
+  };
+
+  public type UserProfile = {
+    name : Text;
+    email : Text;
+    role : UserRole;
+  };
+
+  // Persistent State Variables
+  var nextCustomerId = 1;
+  var nextTransporterId = 1;
+  var nextOrderId = 1;
+  var nextUserId = 1;
+  var dailyOrderSequence = 1;
+  var lastOrderDate = "";
+
+  let customers = Map.empty<Nat, Customer>();
+  let transporters = Map.empty<Nat, Transporter>();
+  let orders = Map.empty<Nat, Order>();
+  let users = Map.empty<Nat, AppUser>();
+  let userProfiles = Map.empty<Principal, UserProfile>();
+
+  // Components: Storage, Authorization
+  include MixinStorage();
+
+  let accessControlState = AccessControl.initState();
+  include MixinAuthorization(accessControlState);
+
+  // USER PROFILE MANAGEMENT (Required by frontend)
+  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can access profiles");
+    };
+    userProfiles.get(caller);
+  };
+
+  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Can only view your own profile");
+    };
+    userProfiles.get(user);
+  };
+
+  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save profiles");
+    };
+    userProfiles.add(caller, profile);
+  };
+
+  // USER MANAGEMENT
+  public shared ({ caller }) func addUser(name : Text, email : Text, role : UserRole, principalId : Text) : async AppUser {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Only admins can add users");
+    };
+
+    let newUser : AppUser = {
+      id = nextUserId;
+      name;
+      email;
+      role;
+      principalId;
+    };
+    users.add(nextUserId, newUser);
+    nextUserId += 1;
+    newUser;
+  };
+
+  public shared ({ caller }) func removeUser(id : Nat) : async () {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Only admins can remove users");
+    };
+
+    users.remove(id);
+  };
+
+  public query ({ caller }) func getUsers() : async [AppUser] {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Only admins can view users");
+    };
+    users.values().toArray();
+  };
+
+  public query func getUserByPrincipal(principalText : Text) : async ?AppUser {
+    switch (users.values().find(func(u) { u.principalId == principalText })) {
+      case (?user) { ?user };
+      case (null) { null };
+    };
+  };
+
+  public query func getUserByEmail(email : Text) : async ?AppUser {
+    switch (users.values().find(func(u) { u.email == email })) {
+      case (?user) { ?user };
+      case (null) { null };
+    };
+  };
+
+  // CUSTOMER MANAGEMENT
+  public shared ({ caller }) func addCustomer(name : Text, phone : Text, city : City) : async Customer {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add customers");
+    };
+
+    let customer : Customer = {
+      id = nextCustomerId;
+      name;
+      phone;
+      city;
+    };
+    customers.add(nextCustomerId, customer);
+    nextCustomerId += 1;
+    customer;
+  };
+
+  public query ({ caller }) func getCustomers() : async [Customer] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view customers");
+    };
+    customers.values().toArray();
+  };
+
+  public query ({ caller }) func getCustomer(id : Nat) : async ?Customer {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view customers");
+    };
+    customers.get(id);
+  };
+
+  // TRANSPORTER MANAGEMENT
+  public shared ({ caller }) func addTransporter(name : Text, contactNumber : Text, city : City) : async Transporter {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add transporters");
+    };
+
+    let transporter : Transporter = {
+      id = nextTransporterId;
+      name;
+      contactNumber;
+      city;
+    };
+    transporters.add(nextTransporterId, transporter);
+    nextTransporterId += 1;
+    transporter;
+  };
+
+  public query ({ caller }) func getTransporters() : async [Transporter] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view transporters");
+    };
+    transporters.values().toArray();
+  };
+
+  public query ({ caller }) func getTransporter(id : Nat) : async ?Transporter {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view transporters");
+    };
+    transporters.get(id);
+  };
+
+  // ORDER MANAGEMENT
+  public shared ({ caller }) func createOrder(
+    salesperson : Text,
+    customerId : Nat,
+    transporterId : Nat,
+    orderValue : Float,
+    notes : Text,
+    createdBy : Text,
+  ) : async ?Order {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can create orders");
+    };
+
+    let (customer, transporter) = switch (customers.get(customerId), transporters.get(transporterId)) {
+      case (?c, ?t) { (c, t) };
+      case (null, _) { return null };
+      case (_, null) { return null };
+    };
+
+    let now = Time.now();
+    let currentDate = formatDatePrefix(now);
+
+    if (currentDate != lastOrderDate) {
+      dailyOrderSequence := 1;
+      lastOrderDate := currentDate;
+    };
+
+    let order : Order = {
+      id = nextOrderId;
+      orderNumber = buildSmartOrderNumber(currentDate, dailyOrderSequence);
+      orderDate = now;
+      salesperson;
+      customerId;
+      customerName = customer.name;
+      customerPhone = customer.phone;
+      customerCity = customer.city;
+      transporterId;
+      transporterName = transporter.name;
+      orderValue;
+      notes;
+      lrNumber = "";
+      dispatchDate = "";
+      status = #pendingDispatch;
+      billPhotoId = "";
+      lrPhotoId = "";
+      createdBy;
+      lastUpdatedBy = createdBy;
+    };
+    orders.add(nextOrderId, order);
+    nextOrderId += 1;
+    dailyOrderSequence += 1;
+    ?order;
+  };
+
+  func formatDatePrefix(time : Int) : Text {
+    let seconds = time / 1_000_000_000;
+    let daysSinceEpoch = seconds / 86_400;
+    let yearsSince1970 = daysSinceEpoch / 365;
+    let year = 1970 + yearsSince1970;
+    let daysThisYear = daysSinceEpoch % 365;
+    let day = daysThisYear % 30 + 1;
+    let month = (daysThisYear / 30) % 12 + 1;
+
+    let yy = Int.abs(year % 100);
+    let yyText = if (yy < 10) { "0" # yy.toText() } else { yy.toText() };
+    let mmText = if (month < 10) { "0" # month.toText() } else { month.toText() };
+    let ddText = if (day < 10) { "0" # day.toText() } else { day.toText() };
+
+    yyText # mmText # ddText;
+  };
+
+  func formatDateYYYYMMDD(time : Int) : Text {
+    let seconds = time / 1_000_000_000;
+    let daysSinceEpoch = seconds / 86_400;
+    let yearsSince1970 = daysSinceEpoch / 365;
+    let year = 1970 + yearsSince1970;
+    let daysThisYear = daysSinceEpoch % 365;
+    let day = daysThisYear % 30 + 1;
+    let month = (daysThisYear / 30) % 12 + 1;
+
+    let yearText = year.toText();
+    let mmText = if (month < 10) { "0" # month.toText() } else { month.toText() };
+    let ddText = if (day < 10) { "0" # day.toText() } else { day.toText() };
+
+    yearText # "-" # mmText # "-" # ddText;
+  };
+
+  func buildSmartOrderNumber(datePart : Text, sequence : Nat) : Text {
+    let sequenceText = if (sequence < 10) {
+      "00" # sequence.toText();
+    } else if (sequence < 100) {
+      "0" # sequence.toText();
+    } else {
+      sequence.toText();
+    };
+    "ORD-" # datePart # "-" # sequenceText;
+  };
+
+  public query ({ caller }) func getOrders() : async [Order] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view orders");
+    };
+    orders.values().toArray().reverse();
+  };
+
+  public query ({ caller }) func getOrder(id : Nat) : async ?Order {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view orders");
+    };
+    orders.get(id);
+  };
+
+  public query ({ caller }) func getOrdersByPhone(phone : Text) : async [Order] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view orders");
+    };
+    let filteredOrders = orders.values().toArray().filter(
+      func(order) { order.customerPhone == phone }
+    );
+    filteredOrders;
+  };
+
+  public query ({ caller }) func getPendingDispatchOrders() : async [Order] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view orders");
+    };
+    let filteredOrders = orders.values().toArray().filter(
+      func(order) {
+        switch (order.status) {
+          case (#pendingDispatch or #packed) { true };
+          case (_) { false };
+        };
+      }
+    );
+    filteredOrders;
+  };
+
+  public shared ({ caller }) func updateOrderDispatch(
+    id : Nat,
+    lrNumber : Text,
+    dispatchDate : Text,
+    status : OrderStatus,
+    billPhotoId : Text,
+    lrPhotoId : Text,
+    lastUpdatedBy : Text,
+  ) : async ?Order {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update orders");
+    };
+
+    switch (orders.get(id)) {
+      case (?order) {
+        var updatedStatus = status;
+        var updatedDispatchDate = dispatchDate;
+
+        if (lrPhotoId != "") {
+          updatedStatus := #dispatched;
+          updatedDispatchDate := formatDateYYYYMMDD(Time.now());
+        };
+
+        let updatedOrder : Order = {
+          id;
+          orderNumber = order.orderNumber;
+          orderDate = order.orderDate;
+          salesperson = order.salesperson;
+          customerId = order.customerId;
+          customerName = order.customerName;
+          customerPhone = order.customerPhone;
+          customerCity = order.customerCity;
+          transporterId = order.transporterId;
+          transporterName = order.transporterName;
+          orderValue = order.orderValue;
+          notes = order.notes;
+          lrNumber;
+          dispatchDate = updatedDispatchDate;
+          status = updatedStatus;
+          billPhotoId;
+          lrPhotoId;
+          createdBy = order.createdBy;
+          lastUpdatedBy;
+        };
+        orders.add(id, updatedOrder);
+        ?updatedOrder;
+      };
+      case (null) { null };
+    };
+  };
+
+  public query ({ caller }) func getOrderStats() : async {
+    total : Nat;
+    pendingDispatch : Nat;
+    packed : Nat;
+    dispatched : Nat;
+    delivered : Nat;
+  } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view order stats");
+    };
+
+    var pendingDispatch = 0;
+    var packed = 0;
+    var dispatched = 0;
+    var delivered = 0;
+
+    orders.values().forEach(
+      func(order) {
+        switch (order.status) {
+          case (#pendingDispatch) { pendingDispatch += 1 };
+          case (#packed) { packed += 1 };
+          case (#dispatched) { dispatched += 1 };
+          case (#delivered) { delivered += 1 };
+          case (_) {};
+        };
+      }
+    );
+
+    {
+      total = orders.size();
+      pendingDispatch;
+      packed;
+      dispatched;
+      delivered;
+    };
+  };
+
+  public query ({ caller }) func getDailyDispatchReport() : async {
+    todayCreated : Nat;
+    todayDispatched : Nat;
+    pendingDispatch : Nat;
+    delivered : Nat;
+    dispatchedToday : [Order];
+  } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view dispatch reports");
+    };
+
+    let now = Time.now();
+    let todayDate = formatDateYYYYMMDD(now);
+
+    var todayCreated = 0;
+    var todayDispatched = 0;
+    var pendingDispatch = 0;
+    var delivered = 0;
+    var dispatchedTodayList : [Order] = [];
+
+    orders.values().forEach(
+      func(order) {
+        let orderDateStr = formatDateYYYYMMDD(order.orderDate);
+        if (orderDateStr == todayDate) {
+          todayCreated += 1;
+        };
+
+        if (order.dispatchDate == todayDate) {
+          todayDispatched += 1;
+          dispatchedTodayList := dispatchedTodayList.concat([order]);
+        };
+
+        switch (order.status) {
+          case (#pendingDispatch) { pendingDispatch += 1 };
+          case (#delivered) { delivered += 1 };
+          case (_) {};
+        };
+      }
+    );
+
+    {
+      todayCreated;
+      todayDispatched;
+      pendingDispatch;
+      delivered;
+      dispatchedToday = dispatchedTodayList;
+    };
+  };
+};

@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Cabinet Grotesk — display/headings */
+@font-face {
+  font-family: "Cabinet Grotesk";
+  src: url("/assets/fonts/CabinetGrotesk-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Figtree — body / UI */
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/Figtree-Variable.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* Core palette — clean slate + amber accent */
+    --background:    0.975 0.004 240;   /* near-white with slight blue-gray */
+    --foreground:    0.18  0.02  255;   /* deep navy-slate */
+    --card:          1     0     0;     /* pure white cards */
+    --card-foreground: 0.18 0.02 255;
+    --popover:       1     0     0;
+    --popover-foreground: 0.18 0.02 255;
+
+    /* Primary — deep navy */
+    --primary:          0.25 0.05 255;
+    --primary-foreground: 0.99 0 0;
+
+    /* Secondary — light slate bg */
+    --secondary:        0.94 0.01 255;
+    --secondary-foreground: 0.25 0.05 255;
+
+    /* Muted */
+    --muted:            0.94 0.01 255;
+    --muted-foreground: 0.52 0.02 255;
+
+    /* Accent — amber/saffron */
+    --accent:           0.82 0.15 75;
+    --accent-foreground: 0.15 0 0;
+
+    /* Status colors */
+    --status-pending:   0.75 0.16 70;    /* amber */
+    --status-packed:    0.62 0.14 230;   /* blue */
+    --status-dispatched: 0.58 0.17 295;  /* purple */
+    --status-delivered:  0.65 0.15 145;  /* green */
+
+    /* Destructive */
+    --destructive:      0.58 0.22 25;
+    --destructive-foreground: 0.99 0 0;
+
+    /* Structural */
+    --border:  0.88 0.01 255;
+    --input:   0.88 0.01 255;
+    --ring:    0.25 0.05 255;
+
+    /* Charts */
+    --chart-1: 0.65 0.15 145;
+    --chart-2: 0.62 0.14 230;
+    --chart-3: 0.58 0.17 295;
+    --chart-4: 0.75 0.16 70;
+    --chart-5: 0.58 0.22 25;
+
+    /* Sidebar */
+    --sidebar: 0.22 0.04 255;
+    --sidebar-foreground: 0.97 0 0;
+    --sidebar-primary: 0.82 0.15 75;
+    --sidebar-primary-foreground: 0.12 0 0;
+    --sidebar-accent: 0.30 0.05 255;
+    --sidebar-accent-foreground: 0.97 0 0;
+    --sidebar-border: 0.30 0.05 255;
+    --sidebar-ring: 0.60 0.04 255;
+
+    /* Bottom nav height */
+    --bottom-nav-height: 4rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    font-size: 16px;
+    line-height: 1.5;
+    overscroll-behavior: none;
+  }
+}
+
+/* Safe area insets for notched devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Mobile content area — pad for bottom nav */
+.content-area {
+  padding-bottom: calc(var(--bottom-nav-height) + 0.5rem + env(safe-area-inset-bottom, 0));
+}
+
+/* Status badge tokens */
+.status-pending {
+  background-color: oklch(0.95 0.08 75);
+  color: oklch(0.40 0.14 70);
+  border-color: oklch(0.85 0.10 75);
+}
+.status-packed {
+  background-color: oklch(0.93 0.07 230);
+  color: oklch(0.35 0.12 230);
+  border-color: oklch(0.82 0.09 230);
+}
+.status-dispatched {
+  background-color: oklch(0.93 0.07 295);
+  color: oklch(0.38 0.14 295);
+  border-color: oklch(0.82 0.10 295);
+}
+.status-delivered {
+  background-color: oklch(0.93 0.08 145);
+  color: oklch(0.35 0.12 145);
+  border-color: oklch(0.80 0.10 145);
+}
+
+/* Touch targets */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Card hover/active */
+.card-interactive {
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+.card-interactive:active {
+  transform: scale(0.985);
+}
+
+/* Smooth scroll on main content */
+.scroll-smooth {
+  -webkit-overflow-scrolling: touch;
+}
