@@ -2,77 +2,61 @@
 
 ## Current State
 
-The app has:
-- Internet Identity login (principal-based auth via authorization component)
-- Customers, Transporters, Orders tables in backend (Motoko)
-- Sequential order numbers: ORD-0001, ORD-0002...
-- Order fields: orderNumber, orderDate, salesperson (text), customer, transporter, orderValue, notes, billPhotoId, lrPhotoId, lrNumber, dispatchDate, status
-- Basic order stats: total, pendingDispatch, packed, dispatched, delivered
-- Frontend pages: Dashboard, OrdersList, NewOrder, OrderDetail, Customers, Transporters
-- WhatsApp deep link button on OrderDetail
-- Blob storage for bill/LR photos
-- BottomNav with 5 tabs
+- Full-stack app with Motoko backend and React frontend.
+- Orders table has: id, orderNumber, orderDate, salesperson, customerId, customerName, customerPhone, customerCity, transporterId, transporterName, orderValue, notes, lrNumber, dispatchDate, status, billPhotoId, lrPhotoId, createdBy, lastUpdatedBy, deliveredDate, invoiceDocId, packingListId, transportReceiptId, otherDocId.
+- Order creation is a single-page form (salesperson, customer, transporter, value, notes).
+- OrderDetail page shows createdBy and lastUpdatedBy but no lastUpdatedTime.
+- No Priority field on orders.
+- No Order Age calculation or display.
+- No edit locking when order is dispatched.
+- New Order form is not a multi-step wizard.
+- Orders list and Pending Dispatch screen have no priority sorting.
 
 ## Requested Changes (Diff)
 
 ### Add
 
-**Backend:**
-- `AppUser` type with fields: id, name, email, role (variant: #admin | #staff), principalId (Text)
-- Users table (Map) with CRUD: addUser, removeUser, getUsers, getUserByEmail, getUserByPrincipal
-- `getOrCreateUserSession` function: looks up caller's principal, returns their AppUser or null (used to gate access)
-- Email-based access control: after Internet Identity login, user must have their principal registered in Users table to proceed; admins can add/remove users
-- Update Order type to add: createdBy (Text - email), lastUpdatedBy (Text - email)
-- Update `createOrder` to accept createdBy email, include it in the order
-- Update `updateOrderDispatch` to accept lastUpdatedBy email
-- Smart order number with date: ORD-YYMMDD-001 format, resetting sequence per day (track lastOrderDate Text and dailySequence Nat)
-- `getOrdersByPhone` query: returns all orders for a customer phone number
-- `getPendingDispatchOrders` query: returns orders with status PendingDispatch or Packed
-- `getDailyDispatchReport` query: returns todayCreated, todayDispatched, pendingDispatch, delivered counts, plus list of orders dispatched today
-- `updateOrderDispatch` auto-set status to Dispatched and dispatchDate to today when lrPhotoId is non-empty
-
-**Frontend:**
-- After login, check if user's principal is in Users table; if not, show "Access Denied" screen (not dashboard)
-- Role-based routing: Admin sees Users management page + full dashboard; Staff sees limited nav
-- Users management page (Admin only): list users, add user (name, email, role), remove user
-- Pending Dispatch screen: dedicated page showing only PendingDispatch + Packed orders
-- Dashboard: add Daily Dispatch Report section showing today's stats and dispatched order list
-- Customer search in NewOrder: replace dropdown with live search input (typeahead) that queries customers by name or phone; show Add New Customer inline
-- Order search by phone number in OrdersList: add phone number search field
-- Smart order number format change: ORD-YYMMDD-001
-- Auto status change to Dispatched + auto dispatchDate when LR photo uploaded
-- WhatsApp message updated to include "Bill and LR copy attached." line
+- `lastUpdatedTime` field (Int, nanosecond timestamp) to Order type in backend.
+- `priority` field (variant: #normal | #urgent | #veryUrgent) to Order type in backend.
+- `updateOrderInfo` backend function to update core order fields (customer, transporter, salesperson, orderValue, notes, priority) — used for admin edits.
+- `priority` parameter to `createOrder`.
+- `lastUpdatedTime` included in `updateOrderDispatch` response (automatically set to Time.now() on every update).
+- Order Age calculated field on frontend (computed from orderDate nanoseconds to current date in days).
+- 3-step wizard UI for New Order page (Step 1: Customer, Step 2: Order Details + Priority, Step 3: Notes + Save).
+- Priority selector (Normal / Urgent / Very Urgent) in New Order form and Order Detail edit section.
+- Priority badge/indicator on OrderCard in OrdersList.
+- Priority sort option in OrdersList and PendingDispatch screen (Urgent/Very Urgent first).
+- Order Age displayed on OrderCard in OrdersList and in PendingDispatch list items.
+- Edit lock on dispatched orders for non-admin users: Customer Name, Customer Phone, Customer City, Transport Name, Order Value, Order Date fields become read-only when status = Dispatched and user role = Staff.
+- "Last Updated Time" shown on Order Details page alongside createdBy / lastUpdatedBy.
 
 ### Modify
 
-- Order number generation: change from ORD-NNNN to ORD-YYMMDD-NNN (date-based daily sequence)
-- NewOrder form: replace customer dropdown with live search/typeahead
-- OrderDetail: update WhatsApp message template
-- OrdersList: add phone number search field alongside existing search
-- Dashboard: add Daily Dispatch Report section
-- AppShell in App.tsx: after identity check, also verify user is in Users table; show access denied or role-aware layout
-- BottomNav: add Pending Dispatch tab; adjust nav items based on role
+- `createOrder` backend: add `priority` parameter, set `lastUpdatedTime = Time.now()`.
+- `updateOrderDispatch` backend: automatically set `lastUpdatedTime = Time.now()` on every call.
+- Order type in backend: add `priority` and `lastUpdatedTime` fields.
+- OrderDetail page: show "Last Updated Time" in Order Details card.
+- OrderDetail page: lock dispatch-related and core order fields when status is Dispatched and current user is Staff role.
+- OrdersList OrderCard: show Priority badge and Order Age.
+- PendingDispatch: show Priority badge, Order Age, and allow sorting by priority.
+- NewOrder page: refactor into 3-step wizard with progress indicator.
 
 ### Remove
 
-- Old ORD-NNNN sequential number format (replaced by date-based)
+Nothing removed.
 
 ## Implementation Plan
 
-1. **Backend**: Add AppUser type, users Map, user CRUD functions, email/principal lookup, update Order with createdBy/lastUpdatedBy, new smart order number logic (YYMMDD + daily sequence), add getOrdersByPhone, getPendingDispatchOrders, getDailyDispatchReport, update updateOrderDispatch to auto-set dispatched state when lrPhotoId is set
+1. **Backend**: Add `priority` variant and `lastUpdatedTime : Int` to Order type. Add `priority` param to `createOrder`. Auto-set `lastUpdatedTime = Time.now()` in both `createOrder` and `updateOrderDispatch`. Add `updateOrderInfo` function for editing core fields (admin-level edit). Update `getPendingDispatchOrders` and `getOrders` to return full orders (already does).
 
-2. **Frontend - Auth/User layer**: After login, call getUserByPrincipal; if null, show access denied screen. Store current user (email, role) in context. Gate routes by role.
+2. **Frontend - New Order wizard**: Refactor NewOrder.tsx into 3-step form with step indicator, animated step transitions, step 1 = customer search/add, step 2 = salesperson + transport + order value + priority, step 3 = notes + confirm + submit.
 
-3. **Frontend - Users page**: Admin-only page to list, add, remove users. Accessible from nav for admins only.
+3. **Frontend - Priority field**: Add priority select (Normal/Urgent/Very Urgent) in step 2 of new order. Add priority selector in OrderDetail update section. Add priority badges on OrderCard and PendingDispatch items. Add priority sort toggle.
 
-4. **Frontend - Pending Dispatch page**: New dedicated page querying getPendingDispatchOrders, displaying Order Number, Customer Name, Transport Name, Order Date, Salesperson.
+4. **Frontend - Order Age**: Compute days since orderDate on frontend. Display as "X Days" / "1 Day" / "0 Days" on OrderCard and PendingDispatch items.
 
-5. **Frontend - NewOrder**: Replace customer dropdown with live search (typeahead), inline Add Customer modal.
+5. **Frontend - Last Updated Time**: Display `lastUpdatedTime` (formatted) in Order Details card as "Last Updated Time".
 
-6. **Frontend - OrdersList**: Add phone number search field, wire getOrdersByPhone.
+6. **Frontend - Edit Lock**: In OrderDetail, when order.status === dispatched and currentUser.role === staff, render locked fields (customerName, customerPhone, customerCity, transporterName, orderValue) as read-only display rows instead of inputs. Admin users can still edit. Show a lock icon/banner explaining locked fields.
 
-7. **Frontend - Dashboard**: Add Daily Dispatch Report section with stats cards and dispatched-today list.
-
-8. **Frontend - OrderDetail**: Auto-dispatch on LR photo upload, updated WhatsApp message format.
-
-9. **Frontend - BottomNav**: Update tabs to include Pending Dispatch; show/hide Users link based on role.
+7. **Frontend - Priority sorting**: In OrdersList and PendingDispatch, add sort by priority button (Very Urgent > Urgent > Normal). Default sort remains by date.

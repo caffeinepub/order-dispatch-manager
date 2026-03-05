@@ -1,4 +1,4 @@
-import { OrderStatus } from "@/backend.d";
+import { OrderPriority, OrderStatus, UserRole } from "@/backend.d";
 import { STATUS_OPTIONS, StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { loadConfig } from "@/config";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
-import { useOrder, useUpdateOrderDispatch } from "@/hooks/useQueries";
+import {
+  useOrder,
+  useUpdateOrderDispatch,
+  useUpdateOrderInfo,
+} from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import { StorageClient } from "@/utils/StorageClient";
 import { HttpAgent } from "@icp-sdk/core/agent";
@@ -22,13 +26,17 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   CheckCircle2,
+  FileText,
   ImageIcon,
   Loader2,
+  Lock,
   MessageCircle,
+  Paperclip,
   Upload,
 } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { PRIORITY_OPTIONS, PriorityBadge } from "./NewOrder";
 
 function formatDateFromNano(nanoseconds: bigint): string {
   const ms = Number(nanoseconds) / 1_000_000;
@@ -37,6 +45,22 @@ function formatDateFromNano(nanoseconds: bigint): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDateTimeFromNano(nanoseconds: bigint): string {
+  const ms = Number(nanoseconds) / 1_000_000;
+  const date = new Date(ms);
+  const datePart = date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${datePart}, ${timePart}`;
 }
 
 function formatOrderValue(value: number): string {
@@ -73,27 +97,60 @@ function DetailRow({ label, value }: DetailRowProps) {
   );
 }
 
-interface PhotoFieldProps {
+interface FlexibleUploadFieldProps {
   label: string;
-  photoId: string;
+  fileId: string;
   isUploading: boolean;
   onUpload: (file: File) => void;
   ocid: string;
+  /** Preview URL for already-uploaded file (from storage) */
+  previewUrl?: string | null;
 }
 
-function PhotoField({
+function FlexibleUploadField({
   label,
-  photoId,
+  fileId,
   isUploading,
   onUpload,
   ocid,
-}: PhotoFieldProps) {
+  previewUrl,
+}: FlexibleUploadFieldProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const [localPreview, setLocalPreview] = React.useState<{
+    url: string;
+    isPdf: boolean;
+  } | null>(null);
+
+  // Clean up local object URL when component unmounts or file changes
+  React.useEffect(() => {
+    return () => {
+      if (localPreview?.url) URL.revokeObjectURL(localPreview.url);
+    };
+  }, [localPreview?.url]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) onUpload(file);
+    if (!file) return;
+
+    // Create local preview
+    if (localPreview?.url) URL.revokeObjectURL(localPreview.url);
+    const isPdf = file.type === "application/pdf";
+    if (!isPdf) {
+      setLocalPreview({ url: URL.createObjectURL(file), isPdf: false });
+    } else {
+      setLocalPreview({ url: "", isPdf: true });
+    }
+
+    onUpload(file);
   };
+
+  const hasFile = !!fileId;
+
+  // Determine what to show for preview
+  const showImagePreview =
+    localPreview && !localPreview.isPdf && localPreview.url;
+  const showPdfBadge = localPreview?.isPdf;
+  const showStoredPreview = !localPreview && hasFile && previewUrl;
 
   return (
     <div className="space-y-2">
@@ -113,7 +170,10 @@ function PhotoField({
         >
           {isUploading ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : photoId ? (
+          ) : showPdfBadge ||
+            (hasFile && !showImagePreview && !showStoredPreview) ? (
+            <FileText className="h-4 w-4 text-orange-500" />
+          ) : hasFile ? (
             <CheckCircle2 className="h-4 w-4 text-green-600" />
           ) : (
             <Upload className="h-4 w-4 text-muted-foreground" />
@@ -121,12 +181,36 @@ function PhotoField({
           <span className="text-muted-foreground">
             {isUploading
               ? "Uploading..."
-              : photoId
-                ? "Replace Photo"
-                : "Upload Photo"}
+              : hasFile
+                ? "Replace File"
+                : "Upload Photo or PDF"}
           </span>
         </button>
-        {photoId && (
+
+        {/* Preview / status */}
+        {showImagePreview && (
+          <img
+            src={showImagePreview}
+            alt={label}
+            className="w-12 h-12 rounded-lg object-cover border border-border flex-shrink-0"
+          />
+        )}
+        {showStoredPreview && (
+          <a href={showStoredPreview} target="_blank" rel="noopener noreferrer">
+            <img
+              src={showStoredPreview}
+              alt={label}
+              className="w-12 h-12 rounded-lg object-cover border border-border flex-shrink-0"
+            />
+          </a>
+        )}
+        {showPdfBadge && (
+          <span className="flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1">
+            <FileText className="h-3 w-3" />
+            PDF
+          </span>
+        )}
+        {hasFile && !isUploading && !localPreview && !showStoredPreview && (
           <span className="text-xs text-green-600 font-medium flex items-center gap-1">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Uploaded
@@ -136,7 +220,7 @@ function PhotoField({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         onChange={handleChange}
         className="hidden"
       />
@@ -160,37 +244,83 @@ export function OrderDetail() {
 
   const { data: order, isLoading, error } = useOrder(orderId);
   const updateOrder = useUpdateOrderDispatch();
+  const updateOrderInfo = useUpdateOrderInfo();
+
+  // Whether this order is locked for staff
+  const isDispatchedLocked =
+    order?.status === OrderStatus.dispatched &&
+    currentUser?.role === UserRole.staff;
 
   // Dispatch form state (initialized from order)
   const [lrNumber, setLrNumber] = useState("");
   const [dispatchDate, setDispatchDate] = useState("");
+  const [deliveredDate, setDeliveredDate] = useState("");
   const [status, setStatus] = useState<OrderStatus>(
     OrderStatus.pendingDispatch,
   );
+  const [priority, setPriority] = useState<OrderPriority>(OrderPriority.normal);
   const [billPhotoId, setBillPhotoId] = useState("");
   const [lrPhotoId, setLrPhotoId] = useState("");
+  const [invoiceDocId, setInvoiceDocId] = useState("");
+  const [packingListId, setPackingListId] = useState("");
+  const [transportReceiptId, setTransportReceiptId] = useState("");
+  const [otherDocId, setOtherDocId] = useState("");
   const [uploadingBill, setUploadingBill] = useState(false);
   const [uploadingLr, setUploadingLr] = useState(false);
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const [uploadingPackingList, setUploadingPackingList] = useState(false);
+  const [uploadingTransportReceipt, setUploadingTransportReceipt] =
+    useState(false);
+  const [uploadingOtherDoc, setUploadingOtherDoc] = useState(false);
   const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(null);
   const [lrPhotoUrl, setLrPhotoUrl] = useState<string | null>(null);
+  // Attachment URLs for display in the Attachments card
+  const [attachmentUrls, setAttachmentUrls] = useState<{
+    invoice: string | null;
+    packingList: string | null;
+    transportReceipt: string | null;
+    other: string | null;
+  }>({ invoice: null, packingList: null, transportReceipt: null, other: null });
 
   // Sync form state when order loads
   useEffect(() => {
     if (order) {
       setLrNumber(order.lrNumber ?? "");
       setDispatchDate(order.dispatchDate ?? "");
+      setDeliveredDate(order.deliveredDate ?? "");
       setStatus(order.status ?? OrderStatus.pendingDispatch);
       setBillPhotoId(order.billPhotoId ?? "");
       setLrPhotoId(order.lrPhotoId ?? "");
+      setInvoiceDocId(order.invoiceDocId ?? "");
+      setPackingListId(order.packingListId ?? "");
+      setTransportReceiptId(order.transportReceiptId ?? "");
+      setOtherDocId(order.otherDocId ?? "");
+      setPriority(order.priority ?? OrderPriority.normal);
     }
   }, [order]);
 
-  // Load photo URLs when photo IDs are available
+  // Auto-set delivered date when status changes to delivered
+  const handleStatusChange = (newStatus: OrderStatus) => {
+    setStatus(newStatus);
+    if (newStatus === OrderStatus.delivered && !deliveredDate) {
+      setDeliveredDate(getTodayDateString());
+    }
+  };
+
+  // Load photo/attachment URLs when IDs are available
   useEffect(() => {
     let cancelled = false;
 
-    const loadPhotoUrls = async () => {
-      if (!billPhotoId && !lrPhotoId) return;
+    const loadUrls = async () => {
+      const idsToLoad = [
+        billPhotoId,
+        lrPhotoId,
+        invoiceDocId,
+        packingListId,
+        transportReceiptId,
+        otherDocId,
+      ];
+      if (!idsToLoad.some(Boolean)) return;
 
       try {
         const config = await loadConfig();
@@ -206,75 +336,134 @@ export function OrderDetail() {
           agent,
         );
 
-        if (billPhotoId && !cancelled) {
+        const loadUrl = async (id: string) => {
+          if (!id) return null;
           try {
-            const url = await storageClient.getDirectURL(billPhotoId);
-            if (!cancelled) setBillPhotoUrl(url);
+            return await storageClient.getDirectURL(id);
           } catch {
-            // ignore URL load error
+            return null;
           }
-        }
+        };
 
-        if (lrPhotoId && !cancelled) {
-          try {
-            const url = await storageClient.getDirectURL(lrPhotoId);
-            if (!cancelled) setLrPhotoUrl(url);
-          } catch {
-            // ignore URL load error
-          }
+        const [billUrl, lrUrl, invoiceUrl, packingUrl, transportUrl, otherUrl] =
+          await Promise.all([
+            loadUrl(billPhotoId),
+            loadUrl(lrPhotoId),
+            loadUrl(invoiceDocId),
+            loadUrl(packingListId),
+            loadUrl(transportReceiptId),
+            loadUrl(otherDocId),
+          ]);
+
+        if (!cancelled) {
+          setBillPhotoUrl(billUrl);
+          setLrPhotoUrl(lrUrl);
+          setAttachmentUrls({
+            invoice: invoiceUrl,
+            packingList: packingUrl,
+            transportReceipt: transportUrl,
+            other: otherUrl,
+          });
         }
       } catch {
         // ignore config load error
       }
     };
 
-    void loadPhotoUrls();
+    void loadUrls();
     return () => {
       cancelled = true;
     };
-  }, [billPhotoId, lrPhotoId, identity]);
+  }, [
+    billPhotoId,
+    lrPhotoId,
+    invoiceDocId,
+    packingListId,
+    transportReceiptId,
+    otherDocId,
+    identity,
+  ]);
 
-  const uploadPhoto = async (file: File, type: "bill" | "lr") => {
-    const setUploading = type === "bill" ? setUploadingBill : setUploadingLr;
-    setUploading(true);
+  const createStorageClient = async () => {
+    const config = await loadConfig();
+    if (!identity) throw new Error("Please log in to upload files");
+    const agent = await HttpAgent.create({
+      identity,
+      host: config.backend_host,
+    });
+    return new StorageClient(
+      "default",
+      config.storage_gateway_url,
+      config.backend_canister_id,
+      config.project_id,
+      agent,
+    );
+  };
+
+  type UploadType =
+    | "bill"
+    | "lr"
+    | "invoice"
+    | "packingList"
+    | "transportReceipt"
+    | "other";
+
+  const uploadFile = async (file: File, type: UploadType) => {
+    const setUploadingMap: Record<UploadType, (v: boolean) => void> = {
+      bill: setUploadingBill,
+      lr: setUploadingLr,
+      invoice: setUploadingInvoice,
+      packingList: setUploadingPackingList,
+      transportReceipt: setUploadingTransportReceipt,
+      other: setUploadingOtherDoc,
+    };
+    const labelMap: Record<UploadType, string> = {
+      bill: "Bill photo",
+      lr: "LR photo",
+      invoice: "Invoice document",
+      packingList: "Packing list",
+      transportReceipt: "Transport receipt",
+      other: "Document",
+    };
+
+    setUploadingMap[type](true);
 
     try {
-      const config = await loadConfig();
-      if (!identity) throw new Error("Please log in to upload photos");
-
-      const agent = await HttpAgent.create({
-        identity,
-        host: config.backend_host,
-      });
-      const storageClient = new StorageClient(
-        "default",
-        config.storage_gateway_url,
-        config.backend_canister_id,
-        config.project_id,
-        agent,
-      );
-
+      const storageClient = await createStorageClient();
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       const { hash } = await storageClient.putFile(bytes);
 
-      if (type === "bill") {
-        setBillPhotoId(hash);
-      } else {
-        // LR photo uploaded: auto-set status to Dispatched and today's date
-        setLrPhotoId(hash);
-        setStatus(OrderStatus.dispatched);
-        setDispatchDate(getTodayDateString());
-        toast.info("Status automatically set to Dispatched");
+      switch (type) {
+        case "bill":
+          setBillPhotoId(hash);
+          break;
+        case "lr":
+          setLrPhotoId(hash);
+          // Auto-set status to Dispatched and today's date
+          setStatus(OrderStatus.dispatched);
+          setDispatchDate(getTodayDateString());
+          toast.info("Status automatically set to Dispatched");
+          break;
+        case "invoice":
+          setInvoiceDocId(hash);
+          break;
+        case "packingList":
+          setPackingListId(hash);
+          break;
+        case "transportReceipt":
+          setTransportReceiptId(hash);
+          break;
+        case "other":
+          setOtherDocId(hash);
+          break;
       }
 
-      toast.success(
-        `${type === "bill" ? "Bill" : "LR"} photo uploaded successfully`,
-      );
+      toast.success(`${labelMap[type]} uploaded successfully`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
-      setUploading(false);
+      setUploadingMap[type](false);
     }
   };
 
@@ -290,7 +479,27 @@ export function OrderDetail() {
         billPhotoId,
         lrPhotoId,
         lastUpdatedBy: currentUser?.email ?? "",
+        deliveredDate,
+        invoiceDocId,
+        packingListId,
+        transportReceiptId,
+        otherDocId,
       });
+
+      // If priority changed, also update order info
+      if (priority !== order.priority) {
+        await updateOrderInfo.mutateAsync({
+          id: order.id,
+          salesperson: order.salesperson,
+          customerId: order.customerId,
+          transporterId: order.transporterId,
+          orderValue: order.orderValue,
+          notes: order.notes,
+          priority,
+          lastUpdatedBy: currentUser?.email ?? "",
+        });
+      }
+
       toast.success("Order updated successfully");
     } catch (err) {
       toast.error(
@@ -401,11 +610,27 @@ export function OrderDetail() {
                 </span>
               }
             />
+            <DetailRow
+              label="Priority"
+              value={
+                order.priority && order.priority !== OrderPriority.normal ? (
+                  <PriorityBadge priority={order.priority} />
+                ) : (
+                  <span className="text-muted-foreground text-xs">Normal</span>
+                )
+              }
+            />
             {order.createdBy && (
               <DetailRow label="Created By" value={order.createdBy} />
             )}
             {order.lastUpdatedBy && (
               <DetailRow label="Updated By" value={order.lastUpdatedBy} />
+            )}
+            {order.lastUpdatedTime > BigInt(0) && (
+              <DetailRow
+                label="Last Updated"
+                value={formatDateTimeFromNano(order.lastUpdatedTime)}
+              />
             )}
           </div>
         </section>
@@ -444,6 +669,9 @@ export function OrderDetail() {
               label="Dispatch Date"
               value={order.dispatchDate || null}
             />
+            {order.deliveredDate && (
+              <DetailRow label="Delivered Date" value={order.deliveredDate} />
+            )}
           </div>
         </section>
 
@@ -504,6 +732,72 @@ export function OrderDetail() {
           </section>
         )}
 
+        {/* Attachments Card — show stored attachments */}
+        {(attachmentUrls.invoice ||
+          attachmentUrls.packingList ||
+          attachmentUrls.transportReceipt ||
+          attachmentUrls.other ||
+          order.invoiceDocId ||
+          order.packingListId ||
+          order.transportReceiptId ||
+          order.otherDocId) && (
+          <section className="bg-card rounded-xl border border-border shadow-card p-4">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Paperclip className="h-3.5 w-3.5" />
+              Attachments
+            </h2>
+            <div className="space-y-2">
+              {[
+                {
+                  label: "Invoice Document",
+                  url: attachmentUrls.invoice,
+                  id: order.invoiceDocId,
+                },
+                {
+                  label: "Packing List",
+                  url: attachmentUrls.packingList,
+                  id: order.packingListId,
+                },
+                {
+                  label: "Transport Receipt",
+                  url: attachmentUrls.transportReceipt,
+                  id: order.transportReceiptId,
+                },
+                {
+                  label: "Other Document",
+                  url: attachmentUrls.other,
+                  id: order.otherDocId,
+                },
+              ]
+                .filter((item) => item.id)
+                .map((item) => (
+                  <div key={item.label} className="flex items-center gap-3">
+                    {item.url ? (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <FileText className="h-4 w-4 flex-shrink-0" />
+                        {item.label}
+                      </a>
+                    ) : (
+                      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <FileText className="h-4 w-4 flex-shrink-0" />
+                        {item.label}
+                      </span>
+                    )}
+                    <span className="text-xs text-green-600 font-medium flex items-center gap-1 ml-auto">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Uploaded
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </section>
+        )}
+
         {/* Notes */}
         {order.notes && (
           <section className="bg-card rounded-xl border border-border shadow-card p-4">
@@ -520,7 +814,51 @@ export function OrderDetail() {
             Update Dispatch
           </h2>
 
+          {/* Dispatch lock banner for staff on dispatched orders */}
+          {isDispatchedLocked && (
+            <div
+              data-ocid="order_detail.dispatch_lock.panel"
+              className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4"
+            >
+              <Lock className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-amber-800">
+                  Order Locked
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  This order is dispatched. Some fields are locked. Contact an
+                  admin to make changes.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
+            {/* Priority */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">Priority</Label>
+              <Select
+                value={priority}
+                onValueChange={(v) => setPriority(v as OrderPriority)}
+                disabled={isDispatchedLocked}
+              >
+                <SelectTrigger
+                  data-ocid="order_detail.update.priority.select"
+                  className="h-11"
+                  disabled={isDispatchedLocked}
+                >
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* LR Number */}
             <div className="space-y-1.5">
               <Label htmlFor="lrNumber" className="text-sm font-semibold">
@@ -556,11 +894,13 @@ export function OrderDetail() {
               <Label className="text-sm font-semibold">Status</Label>
               <Select
                 value={status}
-                onValueChange={(v) => setStatus(v as OrderStatus)}
+                onValueChange={(v) => handleStatusChange(v as OrderStatus)}
+                disabled={isDispatchedLocked}
               >
                 <SelectTrigger
                   data-ocid="order_detail.update.status.select"
                   className="h-11"
+                  disabled={isDispatchedLocked}
                 >
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
@@ -574,22 +914,84 @@ export function OrderDetail() {
               </Select>
             </div>
 
+            {/* Delivered Date — shown only when status is Delivered */}
+            {status === OrderStatus.delivered && (
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="deliveredDate"
+                  className="text-sm font-semibold"
+                >
+                  Delivered Date
+                </Label>
+                <Input
+                  id="deliveredDate"
+                  data-ocid="order_detail.update.delivered_date.input"
+                  type="date"
+                  value={deliveredDate}
+                  onChange={(e) => setDeliveredDate(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+            )}
+
             {/* Bill Photo Upload */}
-            <PhotoField
+            <FlexibleUploadField
               label="Bill Photo"
-              photoId={billPhotoId}
+              fileId={billPhotoId}
               isUploading={uploadingBill}
-              onUpload={(file) => void uploadPhoto(file, "bill")}
+              onUpload={(file) => void uploadFile(file, "bill")}
               ocid="order_detail.update.bill_photo.upload_button"
+              previewUrl={billPhotoUrl}
             />
 
             {/* LR Photo Upload */}
-            <PhotoField
+            <FlexibleUploadField
               label="LR Photo"
-              photoId={lrPhotoId}
+              fileId={lrPhotoId}
               isUploading={uploadingLr}
-              onUpload={(file) => void uploadPhoto(file, "lr")}
+              onUpload={(file) => void uploadFile(file, "lr")}
               ocid="order_detail.update.lr_photo.upload_button"
+              previewUrl={lrPhotoUrl}
+            />
+
+            {/* Invoice Document */}
+            <FlexibleUploadField
+              label="Invoice Document"
+              fileId={invoiceDocId}
+              isUploading={uploadingInvoice}
+              onUpload={(file) => void uploadFile(file, "invoice")}
+              ocid="order_detail.update.invoice_doc.upload_button"
+              previewUrl={attachmentUrls.invoice}
+            />
+
+            {/* Packing List */}
+            <FlexibleUploadField
+              label="Packing List"
+              fileId={packingListId}
+              isUploading={uploadingPackingList}
+              onUpload={(file) => void uploadFile(file, "packingList")}
+              ocid="order_detail.update.packing_list.upload_button"
+              previewUrl={attachmentUrls.packingList}
+            />
+
+            {/* Transport Receipt */}
+            <FlexibleUploadField
+              label="Transport Receipt"
+              fileId={transportReceiptId}
+              isUploading={uploadingTransportReceipt}
+              onUpload={(file) => void uploadFile(file, "transportReceipt")}
+              ocid="order_detail.update.transport_receipt.upload_button"
+              previewUrl={attachmentUrls.transportReceipt}
+            />
+
+            {/* Other Documents */}
+            <FlexibleUploadField
+              label="Other Documents"
+              fileId={otherDocId}
+              isUploading={uploadingOtherDoc}
+              onUpload={(file) => void uploadFile(file, "other")}
+              ocid="order_detail.update.other_doc.upload_button"
+              previewUrl={attachmentUrls.other}
             />
 
             {/* Save Button */}

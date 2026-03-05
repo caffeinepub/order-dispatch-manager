@@ -8,14 +8,17 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { Loader2, LogOut, ShieldX, Truck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Bell, Loader2, LogOut, ShieldX, Truck } from "lucide-react";
 import React from "react";
 import { BottomNav } from "./components/BottomNav";
 import { CurrentUserProvider, useCurrentUser } from "./hooks/useCurrentUser";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { useUnreadNotificationCount } from "./hooks/useQueries";
 import { Customers } from "./pages/Customers";
 import { Dashboard } from "./pages/Dashboard";
 import { NewOrder } from "./pages/NewOrder";
+import { Notifications } from "./pages/Notifications";
 import { OrderDetail } from "./pages/OrderDetail";
 import { OrdersList } from "./pages/OrdersList";
 import { PendingDispatch } from "./pages/PendingDispatch";
@@ -131,6 +134,28 @@ function AccessDeniedScreen() {
 
 // ─── App Shell ───────────────────────────────────────────────────────────────
 
+function NotificationBell() {
+  const { currentUser } = useCurrentUser();
+  const salesperson = currentUser?.name ?? "";
+  const { data: unreadCount } = useUnreadNotificationCount(salesperson);
+  const count = unreadCount ? Number(unreadCount) : 0;
+
+  return (
+    <Link
+      to="/notifications"
+      data-ocid="nav.notifications.link"
+      className="relative flex items-center justify-center w-8 h-8 rounded-lg hover:bg-secondary transition-colors"
+    >
+      <Bell className="h-4 w-4 text-muted-foreground" />
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold leading-none">
+          {count > 9 ? "9+" : count}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 function AppShellInner() {
   const { identity, clear, isInitializing } = useInternetIdentity();
   const { currentUser, isLoadingUser } = useCurrentUser();
@@ -170,18 +195,21 @@ function AppShellInner() {
 
   return (
     <div className="relative">
-      {/* Top-right logout button — only show on wider screens */}
-      <div className="fixed top-3 right-4 z-50 hidden sm:block">
-        <Button
-          data-ocid="auth.logout_button"
-          variant="ghost"
-          size="sm"
-          onClick={clear}
-          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <LogOut className="h-3.5 w-3.5 mr-1" />
-          Logout
-        </Button>
+      {/* Top-right actions — notifications bell + logout (wider screens) */}
+      <div className="fixed top-3 right-4 z-50 flex items-center gap-1">
+        <NotificationBell />
+        <div className="hidden sm:block">
+          <Button
+            data-ocid="auth.logout_button"
+            variant="ghost"
+            size="sm"
+            onClick={clear}
+            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="h-3.5 w-3.5 mr-1" />
+            Logout
+          </Button>
+        </div>
       </div>
 
       <Outlet />
@@ -252,6 +280,12 @@ const usersRoute = createRoute({
   component: Users,
 });
 
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/notifications",
+  component: Notifications,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   ordersListRoute,
@@ -261,6 +295,7 @@ const routeTree = rootRoute.addChildren([
   transportersRoute,
   pendingDispatchRoute,
   usersRoute,
+  notificationsRoute,
 ]);
 
 const router = createRouter({ routeTree });

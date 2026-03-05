@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AppUser, Customer, Order, Transporter } from "../backend.d";
-import type { OrderStatus, UserRole } from "../backend.d";
+import type {
+  AppUser,
+  Customer,
+  Notification,
+  Order,
+  Transporter,
+} from "../backend.d";
+import type { OrderPriority, OrderStatus, UserRole } from "../backend.d";
 import { useActor } from "./useActor";
 
 // ─── Customers ──────────────────────────────────────────────────────────────
@@ -160,6 +166,7 @@ export function useCreateOrder() {
       orderValue,
       notes,
       createdBy,
+      priority,
     }: {
       salesperson: string;
       customerId: bigint;
@@ -167,6 +174,7 @@ export function useCreateOrder() {
       orderValue: number;
       notes: string;
       createdBy: string;
+      priority: OrderPriority;
     }) => {
       if (!actor) throw new Error("Not connected");
       const result = await actor.createOrder(
@@ -176,6 +184,7 @@ export function useCreateOrder() {
         orderValue,
         notes,
         createdBy,
+        priority,
       );
       if (!result)
         throw new Error(
@@ -193,6 +202,53 @@ export function useCreateOrder() {
   });
 }
 
+export function useUpdateOrderInfo() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      salesperson,
+      customerId,
+      transporterId,
+      orderValue,
+      notes,
+      priority,
+      lastUpdatedBy,
+    }: {
+      id: bigint;
+      salesperson: string;
+      customerId: bigint;
+      transporterId: bigint;
+      orderValue: number;
+      notes: string;
+      priority: OrderPriority;
+      lastUpdatedBy: string;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      const result = await actor.updateOrderInfo(
+        id,
+        salesperson,
+        customerId,
+        transporterId,
+        orderValue,
+        notes,
+        priority,
+        lastUpdatedBy,
+      );
+      if (!result) throw new Error("Order not found");
+      return result;
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["orderStats"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["order", data.id.toString()],
+      });
+    },
+  });
+}
+
 export function useUpdateOrderDispatch() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -205,6 +261,11 @@ export function useUpdateOrderDispatch() {
       billPhotoId,
       lrPhotoId,
       lastUpdatedBy,
+      deliveredDate,
+      invoiceDocId,
+      packingListId,
+      transportReceiptId,
+      otherDocId,
     }: {
       id: bigint;
       lrNumber: string;
@@ -213,6 +274,11 @@ export function useUpdateOrderDispatch() {
       billPhotoId: string;
       lrPhotoId: string;
       lastUpdatedBy: string;
+      deliveredDate: string;
+      invoiceDocId: string;
+      packingListId: string;
+      transportReceiptId: string;
+      otherDocId: string;
     }) => {
       if (!actor) throw new Error("Not connected");
       const result = await actor.updateOrderDispatch(
@@ -223,6 +289,11 @@ export function useUpdateOrderDispatch() {
         billPhotoId,
         lrPhotoId,
         lastUpdatedBy,
+        deliveredDate,
+        invoiceDocId,
+        packingListId,
+        transportReceiptId,
+        otherDocId,
       );
       if (!result) throw new Error("Order not found");
       return result;
@@ -239,7 +310,52 @@ export function useUpdateOrderDispatch() {
       void queryClient.invalidateQueries({
         queryKey: ["dailyDispatchReport"],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["notifications"],
+      });
     },
+  });
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+export function useNotificationsForSalesperson(salesperson: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Notification[]>({
+    queryKey: ["notifications", salesperson],
+    queryFn: async () => {
+      if (!actor || !salesperson) return [];
+      return actor.getNotificationsForSalesperson(salesperson);
+    },
+    enabled: !!actor && !isFetching && salesperson.length > 0,
+    refetchInterval: 30_000, // poll every 30 seconds
+  });
+}
+
+export function useMarkNotificationRead() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: bigint }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.markNotificationRead(id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useUnreadNotificationCount(salesperson: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<bigint>({
+    queryKey: ["notificationCount", salesperson],
+    queryFn: async () => {
+      if (!actor || !salesperson) return BigInt(0);
+      return actor.getUnreadNotificationCount(salesperson);
+    },
+    enabled: !!actor && !isFetching && salesperson.length > 0,
+    refetchInterval: 30_000,
   });
 }
 

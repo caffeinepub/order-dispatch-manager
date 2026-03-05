@@ -24,6 +24,18 @@ export interface Customer {
   'name' : string,
   'phone' : string,
 }
+export interface Notification {
+  'id' : bigint,
+  'customerName' : string,
+  'salesperson' : string,
+  'createdAt' : bigint,
+  'dispatchDate' : string,
+  'isRead' : boolean,
+  'orderId' : bigint,
+  'lrNumber' : string,
+  'orderNumber' : string,
+  'transporterName' : string,
+}
 export interface Order {
   'id' : bigint,
   'customerName' : string,
@@ -36,15 +48,25 @@ export interface Order {
   'dispatchDate' : string,
   'orderDate' : bigint,
   'orderValue' : number,
+  'transportReceiptId' : string,
   'lrNumber' : string,
   'lastUpdatedBy' : string,
+  'packingListId' : string,
+  'otherDocId' : string,
   'notes' : string,
   'customerId' : bigint,
+  'priority' : OrderPriority,
+  'lastUpdatedTime' : bigint,
   'transporterId' : bigint,
+  'invoiceDocId' : string,
   'orderNumber' : string,
+  'deliveredDate' : string,
   'transporterName' : string,
   'customerCity' : City,
 }
+export type OrderPriority = { 'normal' : null } |
+  { 'urgent' : null } |
+  { 'veryUrgent' : null };
 export type OrderStatus = { 'dispatched' : null } |
   { 'delivered' : null } |
   { 'unknown' : null } |
@@ -99,7 +121,7 @@ export interface _SERVICE {
   'addUser' : ActorMethod<[string, string, UserRole, string], AppUser>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole__1], undefined>,
   'createOrder' : ActorMethod<
-    [string, bigint, bigint, number, string, string],
+    [string, bigint, bigint, number, string, string, OrderPriority],
     [] | [Order]
   >,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
@@ -116,6 +138,7 @@ export interface _SERVICE {
       'pendingDispatch' : bigint,
     }
   >,
+  'getNotificationsForSalesperson' : ActorMethod<[string], Array<Notification>>,
   'getOrder' : ActorMethod<[bigint], [] | [Order]>,
   'getOrderStats' : ActorMethod<
     [],
@@ -132,15 +155,34 @@ export interface _SERVICE {
   'getPendingDispatchOrders' : ActorMethod<[], Array<Order>>,
   'getTransporter' : ActorMethod<[bigint], [] | [Transporter]>,
   'getTransporters' : ActorMethod<[], Array<Transporter>>,
+  'getUnreadNotificationCount' : ActorMethod<[string], bigint>,
   'getUserByEmail' : ActorMethod<[string], [] | [AppUser]>,
   'getUserByPrincipal' : ActorMethod<[string], [] | [AppUser]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'getUsers' : ActorMethod<[], Array<AppUser>>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'markNotificationRead' : ActorMethod<[bigint], undefined>,
   'removeUser' : ActorMethod<[bigint], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'updateOrderDispatch' : ActorMethod<
-    [bigint, string, string, OrderStatus, string, string, string],
+    [
+      bigint,
+      string,
+      string,
+      OrderStatus,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
+    [] | [Order]
+  >,
+  'updateOrderInfo' : ActorMethod<
+    [bigint, string, bigint, bigint, number, string, OrderPriority, string],
     [] | [Order]
   >,
 }

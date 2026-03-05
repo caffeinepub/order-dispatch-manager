@@ -45,6 +45,11 @@ export const UserRole__1 = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const OrderPriority = IDL.Variant({
+  'normal' : IDL.Null,
+  'urgent' : IDL.Null,
+  'veryUrgent' : IDL.Null,
+});
 export const OrderStatus = IDL.Variant({
   'dispatched' : IDL.Null,
   'delivered' : IDL.Null,
@@ -64,12 +69,19 @@ export const Order = IDL.Record({
   'dispatchDate' : IDL.Text,
   'orderDate' : IDL.Int,
   'orderValue' : IDL.Float64,
+  'transportReceiptId' : IDL.Text,
   'lrNumber' : IDL.Text,
   'lastUpdatedBy' : IDL.Text,
+  'packingListId' : IDL.Text,
+  'otherDocId' : IDL.Text,
   'notes' : IDL.Text,
   'customerId' : IDL.Nat,
+  'priority' : OrderPriority,
+  'lastUpdatedTime' : IDL.Int,
   'transporterId' : IDL.Nat,
+  'invoiceDocId' : IDL.Text,
   'orderNumber' : IDL.Text,
+  'deliveredDate' : IDL.Text,
   'transporterName' : IDL.Text,
   'customerCity' : City,
 });
@@ -77,6 +89,18 @@ export const UserProfile = IDL.Record({
   'name' : IDL.Text,
   'role' : UserRole,
   'email' : IDL.Text,
+});
+export const Notification = IDL.Record({
+  'id' : IDL.Nat,
+  'customerName' : IDL.Text,
+  'salesperson' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'dispatchDate' : IDL.Text,
+  'isRead' : IDL.Bool,
+  'orderId' : IDL.Nat,
+  'lrNumber' : IDL.Text,
+  'orderNumber' : IDL.Text,
+  'transporterName' : IDL.Text,
 });
 
 export const idlService = IDL.Service({
@@ -112,7 +136,15 @@ export const idlService = IDL.Service({
   'addUser' : IDL.Func([IDL.Text, IDL.Text, UserRole, IDL.Text], [AppUser], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole__1], [], []),
   'createOrder' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Nat, IDL.Float64, IDL.Text, IDL.Text],
+      [
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Float64,
+        IDL.Text,
+        IDL.Text,
+        OrderPriority,
+      ],
       [IDL.Opt(Order)],
       [],
     ),
@@ -131,6 +163,11 @@ export const idlService = IDL.Service({
           'pendingDispatch' : IDL.Nat,
         }),
       ],
+      ['query'],
+    ),
+  'getNotificationsForSalesperson' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(Notification)],
       ['query'],
     ),
   'getOrder' : IDL.Func([IDL.Nat], [IDL.Opt(Order)], ['query']),
@@ -152,6 +189,7 @@ export const idlService = IDL.Service({
   'getPendingDispatchOrders' : IDL.Func([], [IDL.Vec(Order)], ['query']),
   'getTransporter' : IDL.Func([IDL.Nat], [IDL.Opt(Transporter)], ['query']),
   'getTransporters' : IDL.Func([], [IDL.Vec(Transporter)], ['query']),
+  'getUnreadNotificationCount' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
   'getUserByEmail' : IDL.Func([IDL.Text], [IDL.Opt(AppUser)], ['query']),
   'getUserByPrincipal' : IDL.Func([IDL.Text], [IDL.Opt(AppUser)], ['query']),
   'getUserProfile' : IDL.Func(
@@ -161,10 +199,38 @@ export const idlService = IDL.Service({
     ),
   'getUsers' : IDL.Func([], [IDL.Vec(AppUser)], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
   'removeUser' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'updateOrderDispatch' : IDL.Func(
-      [IDL.Nat, IDL.Text, IDL.Text, OrderStatus, IDL.Text, IDL.Text, IDL.Text],
+      [
+        IDL.Nat,
+        IDL.Text,
+        IDL.Text,
+        OrderStatus,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+      ],
+      [IDL.Opt(Order)],
+      [],
+    ),
+  'updateOrderInfo' : IDL.Func(
+      [
+        IDL.Nat,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Float64,
+        IDL.Text,
+        OrderPriority,
+        IDL.Text,
+      ],
       [IDL.Opt(Order)],
       [],
     ),
@@ -210,6 +276,11 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const OrderPriority = IDL.Variant({
+    'normal' : IDL.Null,
+    'urgent' : IDL.Null,
+    'veryUrgent' : IDL.Null,
+  });
   const OrderStatus = IDL.Variant({
     'dispatched' : IDL.Null,
     'delivered' : IDL.Null,
@@ -229,12 +300,19 @@ export const idlFactory = ({ IDL }) => {
     'dispatchDate' : IDL.Text,
     'orderDate' : IDL.Int,
     'orderValue' : IDL.Float64,
+    'transportReceiptId' : IDL.Text,
     'lrNumber' : IDL.Text,
     'lastUpdatedBy' : IDL.Text,
+    'packingListId' : IDL.Text,
+    'otherDocId' : IDL.Text,
     'notes' : IDL.Text,
     'customerId' : IDL.Nat,
+    'priority' : OrderPriority,
+    'lastUpdatedTime' : IDL.Int,
     'transporterId' : IDL.Nat,
+    'invoiceDocId' : IDL.Text,
     'orderNumber' : IDL.Text,
+    'deliveredDate' : IDL.Text,
     'transporterName' : IDL.Text,
     'customerCity' : City,
   });
@@ -242,6 +320,18 @@ export const idlFactory = ({ IDL }) => {
     'name' : IDL.Text,
     'role' : UserRole,
     'email' : IDL.Text,
+  });
+  const Notification = IDL.Record({
+    'id' : IDL.Nat,
+    'customerName' : IDL.Text,
+    'salesperson' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'dispatchDate' : IDL.Text,
+    'isRead' : IDL.Bool,
+    'orderId' : IDL.Nat,
+    'lrNumber' : IDL.Text,
+    'orderNumber' : IDL.Text,
+    'transporterName' : IDL.Text,
   });
   
   return IDL.Service({
@@ -281,7 +371,15 @@ export const idlFactory = ({ IDL }) => {
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole__1], [], []),
     'createOrder' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Nat, IDL.Float64, IDL.Text, IDL.Text],
+        [
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Float64,
+          IDL.Text,
+          IDL.Text,
+          OrderPriority,
+        ],
         [IDL.Opt(Order)],
         [],
       ),
@@ -300,6 +398,11 @@ export const idlFactory = ({ IDL }) => {
             'pendingDispatch' : IDL.Nat,
           }),
         ],
+        ['query'],
+      ),
+    'getNotificationsForSalesperson' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(Notification)],
         ['query'],
       ),
     'getOrder' : IDL.Func([IDL.Nat], [IDL.Opt(Order)], ['query']),
@@ -321,6 +424,7 @@ export const idlFactory = ({ IDL }) => {
     'getPendingDispatchOrders' : IDL.Func([], [IDL.Vec(Order)], ['query']),
     'getTransporter' : IDL.Func([IDL.Nat], [IDL.Opt(Transporter)], ['query']),
     'getTransporters' : IDL.Func([], [IDL.Vec(Transporter)], ['query']),
+    'getUnreadNotificationCount' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
     'getUserByEmail' : IDL.Func([IDL.Text], [IDL.Opt(AppUser)], ['query']),
     'getUserByPrincipal' : IDL.Func([IDL.Text], [IDL.Opt(AppUser)], ['query']),
     'getUserProfile' : IDL.Func(
@@ -330,6 +434,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getUsers' : IDL.Func([], [IDL.Vec(AppUser)], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
     'removeUser' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'updateOrderDispatch' : IDL.Func(
@@ -340,6 +445,25 @@ export const idlFactory = ({ IDL }) => {
           OrderStatus,
           IDL.Text,
           IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+        ],
+        [IDL.Opt(Order)],
+        [],
+      ),
+    'updateOrderInfo' : IDL.Func(
+        [
+          IDL.Nat,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Float64,
+          IDL.Text,
+          OrderPriority,
           IDL.Text,
         ],
         [IDL.Opt(Order)],

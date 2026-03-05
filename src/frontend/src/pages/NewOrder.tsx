@@ -26,11 +26,67 @@ import {
 } from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Info, Loader2, UserPlus, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  UserPlus,
+  X,
+  Zap,
+} from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Customer } from "../backend.d";
+import { OrderPriority } from "../backend.d";
+
+// ─── Priority helpers ─────────────────────────────────────────────────────────
+
+export const PRIORITY_OPTIONS: {
+  value: OrderPriority;
+  label: string;
+  className: string;
+}[] = [
+  {
+    value: OrderPriority.normal,
+    label: "Normal",
+    className: "bg-secondary text-secondary-foreground border-border",
+  },
+  {
+    value: OrderPriority.urgent,
+    label: "Urgent",
+    className: "bg-orange-100 text-orange-700 border border-orange-200",
+  },
+  {
+    value: OrderPriority.veryUrgent,
+    label: "Very Urgent",
+    className: "bg-red-100 text-red-700 border border-red-200",
+  },
+];
+
+export function PriorityBadge({
+  priority,
+}: {
+  priority: OrderPriority | undefined;
+}) {
+  if (!priority || priority === OrderPriority.normal) return null;
+  const opt = PRIORITY_OPTIONS.find((o) => o.value === priority);
+  if (!opt) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold border",
+        opt.className,
+      )}
+    >
+      {priority === OrderPriority.veryUrgent && <Zap className="h-2.5 w-2.5" />}
+      {opt.label}
+    </span>
+  );
+}
+
+// ─── Add Customer Dialog ─────────────────────────────────────────────────────
 
 interface AddCustomerDialogProps {
   open: boolean;
@@ -137,6 +193,8 @@ function AddCustomerDialog({ open, onClose, onAdded }: AddCustomerDialogProps) {
   );
 }
 
+// ─── Customer Typeahead ───────────────────────────────────────────────────────
+
 interface CustomerTypeaheadProps {
   customers: Customer[] | undefined;
   isLoading: boolean;
@@ -192,7 +250,6 @@ function CustomerTypeahead({
   };
 
   const handleInputBlur = () => {
-    // Delay to allow click on dropdown items
     setTimeout(() => setIsOpen(false), 150);
   };
 
@@ -229,7 +286,6 @@ function CustomerTypeahead({
         )}
       </div>
 
-      {/* Dropdown */}
       {isOpen && query.length >= 1 && (
         <div
           ref={dropdownRef}
@@ -278,6 +334,66 @@ function CustomerTypeahead({
   );
 }
 
+// ─── Step Indicator ───────────────────────────────────────────────────────────
+
+interface StepIndicatorProps {
+  currentStep: 1 | 2 | 3;
+}
+
+const STEP_LABELS = ["Customer", "Details", "Save"];
+
+function StepIndicator({ currentStep }: StepIndicatorProps) {
+  return (
+    <div
+      data-ocid="new_order.step_indicator"
+      className="flex items-center justify-center gap-0 mb-6"
+    >
+      {STEP_LABELS.map((label, idx) => {
+        const stepNum = (idx + 1) as 1 | 2 | 3;
+        const isActive = stepNum === currentStep;
+        const isCompleted = stepNum < currentStep;
+
+        return (
+          <div key={label} className="flex items-center">
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={cn(
+                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                  isActive && "bg-primary text-primary-foreground shadow-md",
+                  isCompleted && "bg-primary/20 text-primary",
+                  !isActive &&
+                    !isCompleted &&
+                    "bg-secondary text-muted-foreground",
+                )}
+              >
+                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+              </div>
+              <span
+                className={cn(
+                  "text-xs font-medium whitespace-nowrap",
+                  isActive ? "text-primary" : "text-muted-foreground",
+                )}
+              >
+                {label}
+              </span>
+            </div>
+            {idx < STEP_LABELS.length - 1 && (
+              <div
+                className={cn(
+                  "w-12 h-0.5 mx-1 mb-4 transition-all",
+                  stepNum < currentStep ? "bg-primary/40" : "bg-border",
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main NewOrder Component ──────────────────────────────────────────────────
+
 export function NewOrder() {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
@@ -286,13 +402,15 @@ export function NewOrder() {
     useTransporters();
   const createOrder = useCreateOrder();
 
-  const [salesperson, setSalesperson] = useState("");
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedCustomer, setSelectedCustomer] = useState<
     Customer | undefined
   >(undefined);
+  const [salesperson, setSalesperson] = useState("");
   const [selectedTransporterId, setSelectedTransporterId] =
     useState<string>("");
   const [orderValue, setOrderValue] = useState("");
+  const [priority, setPriority] = useState<OrderPriority>(OrderPriority.normal);
   const [notes, setNotes] = useState("");
   const [showAddCustomer, setShowAddCustomer] = useState(false);
 
@@ -300,14 +418,17 @@ export function NewOrder() {
     setSelectedCustomer(customer);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!salesperson.trim()) {
-      toast.error("Salesperson name is required");
-      return;
-    }
+  const selectedTransporter = transporters?.find(
+    (t) => t.id.toString() === selectedTransporterId,
+  );
+
+  const handleSubmit = async () => {
     if (!selectedCustomer) {
       toast.error("Please select a customer");
+      return;
+    }
+    if (!salesperson.trim()) {
+      toast.error("Salesperson name is required");
       return;
     }
     if (!selectedTransporterId) {
@@ -328,6 +449,7 @@ export function NewOrder() {
         orderValue: value,
         notes: notes.trim(),
         createdBy: currentUser?.email ?? "",
+        priority,
       });
       toast.success(`Order ${order.orderNumber} created`);
       void navigate({ to: `/orders/${order.id.toString()}` });
@@ -361,170 +483,318 @@ export function NewOrder() {
               New Order
             </h1>
             <p className="text-xs text-muted-foreground">
-              Date: {today} • Status: Pending Dispatch
+              {today} · Pending Dispatch
             </p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-lg px-4 py-5">
-        {/* Auto-generated info banner */}
-        <div className="flex items-start gap-2 rounded-xl bg-secondary border border-border p-3 mb-5">
-          <Info className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground">
-            Order Number and Date are automatically generated. Status is set to{" "}
-            <span className="font-medium text-foreground">
-              Pending Dispatch
-            </span>
-            .
-          </p>
-        </div>
+        {/* Step indicator */}
+        <StepIndicator currentStep={step} />
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
-          {/* Salesperson */}
-          <div className="space-y-1.5">
-            <Label htmlFor="salesperson" className="text-sm font-semibold">
-              Salesperson Name *
-            </Label>
-            <Input
-              id="salesperson"
-              data-ocid="new_order.salesperson.input"
-              placeholder="Enter salesperson name"
-              value={salesperson}
-              onChange={(e) => setSalesperson(e.target.value)}
-              className="h-12 text-base"
-              required
-            />
-          </div>
-
-          {/* Customer typeahead search */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Select Customer *</Label>
-              <button
-                type="button"
-                data-ocid="new_order.add_customer.open_modal_button"
-                onClick={() => setShowAddCustomer(true)}
-                className="flex items-center gap-1 text-xs text-primary font-medium touch-target px-2 py-1 rounded-md hover:bg-secondary transition-colors"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Add New
-              </button>
+        {/* Step 1 — Customer Selection */}
+        {step === 1 && (
+          <div data-ocid="new_order.step1.panel" className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">
+                Select Customer
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Search for an existing customer or add a new one
+              </p>
             </div>
-            <CustomerTypeahead
-              customers={customers}
-              isLoading={customersLoading}
-              selectedCustomer={selectedCustomer}
-              onSelect={setSelectedCustomer}
-              onClear={() => setSelectedCustomer(undefined)}
-              onAddNew={() => setShowAddCustomer(true)}
-            />
-          </div>
 
-          {/* Auto-filled customer fields */}
-          {selectedCustomer && (
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-secondary border border-border">
-              <div>
-                <p className="text-xs text-muted-foreground">Phone</p>
-                <p className="text-sm font-medium text-foreground">
-                  {selectedCustomer.phone}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">City</p>
-                <p className="text-sm font-medium text-foreground">
-                  {selectedCustomer.city}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Transporter */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Select Transport *</Label>
-            {transportersLoading ? (
-              <Skeleton className="h-12 w-full rounded-lg" />
-            ) : (
-              <Select
-                value={selectedTransporterId}
-                onValueChange={setSelectedTransporterId}
-              >
-                <SelectTrigger
-                  data-ocid="new_order.transport.select"
-                  className="h-12 text-base"
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Customer *</Label>
+                <button
+                  type="button"
+                  data-ocid="new_order.add_customer.open_modal_button"
+                  onClick={() => setShowAddCustomer(true)}
+                  className="flex items-center gap-1 text-xs text-primary font-medium touch-target px-2 py-1 rounded-md hover:bg-secondary transition-colors"
                 >
-                  <SelectValue placeholder="Choose a transporter..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {transporters?.length === 0 ? (
-                    <div className="p-3 text-sm text-muted-foreground text-center">
-                      No transporters yet. Add from the Transporters page.
-                    </div>
-                  ) : (
-                    transporters?.map((t) => (
-                      <SelectItem key={t.id.toString()} value={t.id.toString()}>
-                        {t.name} — {t.city}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Add New
+                </button>
+              </div>
+              <CustomerTypeahead
+                customers={customers}
+                isLoading={customersLoading}
+                selectedCustomer={selectedCustomer}
+                onSelect={setSelectedCustomer}
+                onClear={() => setSelectedCustomer(undefined)}
+                onAddNew={() => setShowAddCustomer(true)}
+              />
+            </div>
+
+            {/* Selected customer details */}
+            {selectedCustomer && (
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-secondary border border-border">
+                <div>
+                  <p className="text-xs text-muted-foreground">Phone</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {selectedCustomer.phone}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">City</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {selectedCustomer.city}
+                  </p>
+                </div>
+              </div>
             )}
-          </div>
 
-          {/* Order Value */}
-          <div className="space-y-1.5">
-            <Label htmlFor="orderValue" className="text-sm font-semibold">
-              Order Value (₹) *
-            </Label>
-            <Input
-              id="orderValue"
-              data-ocid="new_order.order_value.input"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              value={orderValue}
-              onChange={(e) => setOrderValue(e.target.value)}
-              className="h-12 text-base"
-              required
-            />
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-1.5">
-            <Label htmlFor="notes" className="text-sm font-semibold">
-              Notes
-            </Label>
-            <Textarea
-              id="notes"
-              data-ocid="new_order.notes.textarea"
-              placeholder="Any additional notes..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="resize-none text-base"
-            />
-          </div>
-
-          {/* Submit */}
-          <div className="pt-2">
             <Button
-              type="submit"
-              data-ocid="new_order.submit_button"
-              disabled={createOrder.isPending}
-              className={cn(
-                "w-full h-12 text-base font-semibold rounded-xl",
-                "shadow-card",
-              )}
+              type="button"
+              data-ocid="new_order.step1.next_button"
+              disabled={!selectedCustomer}
+              onClick={() => setStep(2)}
+              className="w-full h-12 text-base font-semibold rounded-xl"
             >
-              {createOrder.isPending && (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              )}
-              {createOrder.isPending ? "Creating Order..." : "Create Order"}
+              Next
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
-        </form>
+        )}
+
+        {/* Step 2 — Order Details */}
+        {step === 2 && (
+          <div data-ocid="new_order.step2.panel" className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">
+                Order Details
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                For:{" "}
+                <span className="font-medium text-foreground">
+                  {selectedCustomer?.name}
+                </span>
+              </p>
+            </div>
+
+            {/* Salesperson */}
+            <div className="space-y-1.5">
+              <Label htmlFor="salesperson" className="text-sm font-semibold">
+                Salesperson Name *
+              </Label>
+              <Input
+                id="salesperson"
+                data-ocid="new_order.salesperson.input"
+                placeholder="Enter salesperson name"
+                value={salesperson}
+                onChange={(e) => setSalesperson(e.target.value)}
+                className="h-12 text-base"
+                autoFocus
+              />
+            </div>
+
+            {/* Transport */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">Transport *</Label>
+              {transportersLoading ? (
+                <Skeleton className="h-12 w-full rounded-lg" />
+              ) : (
+                <Select
+                  value={selectedTransporterId}
+                  onValueChange={setSelectedTransporterId}
+                >
+                  <SelectTrigger
+                    data-ocid="new_order.transport.select"
+                    className="h-12 text-base"
+                  >
+                    <SelectValue placeholder="Choose a transporter..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {transporters?.length === 0 ? (
+                      <div className="p-3 text-sm text-muted-foreground text-center">
+                        No transporters yet. Add from the Transporters page.
+                      </div>
+                    ) : (
+                      transporters?.map((t) => (
+                        <SelectItem
+                          key={t.id.toString()}
+                          value={t.id.toString()}
+                        >
+                          {t.name} — {t.city}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* Order Value */}
+            <div className="space-y-1.5">
+              <Label htmlFor="orderValue" className="text-sm font-semibold">
+                Order Value (₹) *
+              </Label>
+              <Input
+                id="orderValue"
+                data-ocid="new_order.order_value.input"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={orderValue}
+                onChange={(e) => setOrderValue(e.target.value)}
+                className="h-12 text-base"
+              />
+            </div>
+
+            {/* Priority */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">Priority</Label>
+              <Select
+                value={priority}
+                onValueChange={(v) => setPriority(v as OrderPriority)}
+              >
+                <SelectTrigger
+                  data-ocid="new_order.priority.select"
+                  className="h-12 text-base"
+                >
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                data-ocid="new_order.step2.back_button"
+                onClick={() => setStep(1)}
+                className="flex-1 h-12 rounded-xl"
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                data-ocid="new_order.step2.next_button"
+                disabled={
+                  !salesperson.trim() ||
+                  !selectedTransporterId ||
+                  !orderValue ||
+                  Number.parseFloat(orderValue) <= 0
+                }
+                onClick={() => setStep(3)}
+                className="flex-[2] h-12 text-base font-semibold rounded-xl"
+              >
+                Next
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3 — Notes & Save */}
+        {step === 3 && (
+          <div data-ocid="new_order.step3.panel" className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">
+                Notes & Save
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Review your order before saving
+              </p>
+            </div>
+
+            {/* Summary card */}
+            <div className="rounded-xl bg-secondary border border-border p-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Order Summary
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium text-foreground">
+                    {selectedCustomer?.name}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Transport</span>
+                  <span className="font-medium text-foreground">
+                    {selectedTransporter?.name ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Order Value</span>
+                  <span className="font-bold text-primary">
+                    ₹
+                    {Number.parseFloat(orderValue || "0").toLocaleString(
+                      "en-IN",
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Salesperson</span>
+                  <span className="font-medium text-foreground">
+                    {salesperson}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-muted-foreground">Priority</span>
+                  {priority === OrderPriority.normal ? (
+                    <span className="text-muted-foreground text-xs">
+                      Normal
+                    </span>
+                  ) : (
+                    <PriorityBadge priority={priority} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1.5">
+              <Label htmlFor="notes" className="text-sm font-semibold">
+                Notes (optional)
+              </Label>
+              <Textarea
+                id="notes"
+                data-ocid="new_order.notes.textarea"
+                placeholder="Any additional notes..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="resize-none text-base"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                data-ocid="new_order.step3.back_button"
+                onClick={() => setStep(2)}
+                className="flex-1 h-12 rounded-xl"
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                data-ocid="new_order.submit_button"
+                disabled={createOrder.isPending}
+                onClick={() => void handleSubmit()}
+                className="flex-[2] h-12 text-base font-semibold rounded-xl shadow-card"
+              >
+                {createOrder.isPending && (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                )}
+                {createOrder.isPending ? "Creating..." : "Create Order"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Customer Dialog */}

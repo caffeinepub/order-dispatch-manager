@@ -1,4 +1,4 @@
-import { OrderStatus } from "@/backend.d";
+import { OrderPriority, OrderStatus } from "@/backend.d";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,6 +6,7 @@ import { useOrders, useOrdersByPhone } from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  ArrowUpDown,
   ChevronRight,
   PackageOpen,
   Phone,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import React, { useState, useMemo } from "react";
 import type { Order } from "../backend.d";
+import { PriorityBadge } from "./NewOrder";
 
 type StatusFilter =
   | "All"
@@ -22,6 +24,8 @@ type StatusFilter =
   | typeof OrderStatus.packed
   | typeof OrderStatus.dispatched
   | typeof OrderStatus.delivered;
+
+type SortMode = "date" | "priority";
 
 const statusTabs: { value: StatusFilter; label: string }[] = [
   { value: "All", label: "All" },
@@ -31,6 +35,12 @@ const statusTabs: { value: StatusFilter; label: string }[] = [
   { value: OrderStatus.delivered, label: "Delivered" },
 ];
 
+const PRIORITY_ORDER: Record<string, number> = {
+  [OrderPriority.veryUrgent]: 0,
+  [OrderPriority.urgent]: 1,
+  [OrderPriority.normal]: 2,
+};
+
 function formatDate(nanoseconds: bigint | string): string {
   if (typeof nanoseconds === "string") return nanoseconds;
   const ms = Number(nanoseconds) / 1_000_000;
@@ -39,6 +49,29 @@ function formatDate(nanoseconds: bigint | string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function calcOrderAge(orderDate: bigint): number {
+  const ms = Number(orderDate) / 1_000_000;
+  return Math.floor((Date.now() - ms) / 86_400_000);
+}
+
+function OrderAgeBadge({ orderDate }: { orderDate: bigint }) {
+  const days = calcOrderAge(orderDate);
+  return (
+    <span
+      className={cn(
+        "text-xs font-medium",
+        days >= 5
+          ? "text-red-600"
+          : days >= 3
+            ? "text-orange-500"
+            : "text-muted-foreground",
+      )}
+    >
+      {days === 0 ? "Today" : days === 1 ? "1 Day" : `${days} Days`}
+    </span>
+  );
 }
 
 interface OrderCardProps {
@@ -62,11 +95,12 @@ function OrderCard({ order, index }: OrderCardProps) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-semibold text-primary font-display">
               {order.orderNumber}
             </span>
             <StatusBadge status={order.status} />
+            <PriorityBadge priority={order.priority} />
           </div>
           <p className="font-semibold text-sm text-foreground truncate">
             {order.customerName}
@@ -80,6 +114,7 @@ function OrderCard({ order, index }: OrderCardProps) {
           <span className="text-xs text-muted-foreground">
             {formatDate(order.orderDate)}
           </span>
+          <OrderAgeBadge orderDate={order.orderDate} />
         </div>
       </div>
       {order.dispatchDate && (
@@ -97,6 +132,7 @@ export function OrdersList() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [phoneSearch, setPhoneSearch] = useState("");
   const [showPhoneSearch, setShowPhoneSearch] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("date");
 
   const activePhone = phoneSearch.length >= 5 ? phoneSearch : "";
   const {
@@ -108,13 +144,7 @@ export function OrdersList() {
   const filteredOrders = useMemo(() => {
     if (!orders) return [];
 
-    const sorted = [...orders].sort((a, b) => {
-      const aTime = typeof a.orderDate === "bigint" ? Number(a.orderDate) : 0;
-      const bTime = typeof b.orderDate === "bigint" ? Number(b.orderDate) : 0;
-      return bTime - aTime;
-    });
-
-    return sorted.filter((order) => {
+    const filtered = orders.filter((order) => {
       const matchesStatus =
         statusFilter === "All" || order.status === statusFilter;
 
@@ -128,7 +158,19 @@ export function OrdersList() {
 
       return matchesStatus && matchesSearch;
     });
-  }, [orders, search, statusFilter]);
+
+    return filtered.sort((a, b) => {
+      if (sortMode === "priority") {
+        const aPriority = PRIORITY_ORDER[a.priority] ?? 2;
+        const bPriority = PRIORITY_ORDER[b.priority] ?? 2;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+      }
+      // Sort by date (newest first)
+      const aTime = typeof a.orderDate === "bigint" ? Number(a.orderDate) : 0;
+      const bTime = typeof b.orderDate === "bigint" ? Number(b.orderDate) : 0;
+      return bTime - aTime;
+    });
+  }, [orders, search, statusFilter, sortMode]);
 
   const isPhoneMode = showPhoneSearch && phoneSearch.length >= 5;
   const displayOrders = isPhoneMode ? (phoneOrders ?? []) : filteredOrders;
@@ -144,14 +186,38 @@ export function OrdersList() {
             <h1 className="text-xl font-display font-bold text-foreground">
               Orders
             </h1>
-            <Link
-              to="/orders/new"
-              data-ocid="orders.new_order.button"
-              className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold touch-target active:scale-95 transition-transform"
-            >
-              <Plus className="h-4 w-4" />
-              New
-            </Link>
+            <div className="flex items-center gap-2">
+              {/* Sort toggle */}
+              <button
+                type="button"
+                data-ocid="orders.priority_sort.toggle"
+                onClick={() =>
+                  setSortMode((prev) => (prev === "date" ? "priority" : "date"))
+                }
+                className={cn(
+                  "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors border",
+                  sortMode === "priority"
+                    ? "bg-orange-100 text-orange-700 border-orange-200"
+                    : "bg-secondary text-secondary-foreground border-border hover:bg-muted",
+                )}
+                title={
+                  sortMode === "priority"
+                    ? "Sorting by priority"
+                    : "Sort by date"
+                }
+              >
+                <ArrowUpDown className="h-3 w-3" />
+                {sortMode === "priority" ? "Priority" : "Date"}
+              </button>
+              <Link
+                to="/orders/new"
+                data-ocid="orders.new_order.button"
+                className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold touch-target active:scale-95 transition-transform"
+              >
+                <Plus className="h-4 w-4" />
+                New
+              </Link>
+            </div>
           </div>
 
           {/* Search row */}
@@ -309,6 +375,9 @@ export function OrdersList() {
               {displayOrders.length} order
               {displayOrders.length !== 1 ? "s" : ""}
               {isPhoneMode && ` for "${phoneSearch}"`}
+              {sortMode === "priority" &&
+                !isPhoneMode &&
+                " · sorted by priority"}
             </p>
             {displayOrders.map((order, idx) => (
               <OrderCard

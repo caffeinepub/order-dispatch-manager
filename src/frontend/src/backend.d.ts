@@ -14,12 +14,6 @@ export interface Customer {
     phone: string;
 }
 export type City = string;
-export interface Transporter {
-    id: bigint;
-    city: City;
-    name: string;
-    contactNumber: string;
-}
 export interface AppUser {
     id: bigint;
     name: string;
@@ -39,19 +33,49 @@ export interface Order {
     dispatchDate: string;
     orderDate: bigint;
     orderValue: number;
+    transportReceiptId: string;
     lrNumber: string;
     lastUpdatedBy: string;
+    packingListId: string;
+    otherDocId: string;
     notes: string;
     customerId: bigint;
+    priority: OrderPriority;
+    lastUpdatedTime: bigint;
     transporterId: bigint;
+    invoiceDocId: string;
     orderNumber: string;
+    deliveredDate: string;
     transporterName: string;
     customerCity: City;
+}
+export interface Transporter {
+    id: bigint;
+    city: City;
+    name: string;
+    contactNumber: string;
+}
+export interface Notification {
+    id: bigint;
+    customerName: string;
+    salesperson: string;
+    createdAt: bigint;
+    dispatchDate: string;
+    isRead: boolean;
+    orderId: bigint;
+    lrNumber: string;
+    orderNumber: string;
+    transporterName: string;
 }
 export interface UserProfile {
     name: string;
     role: UserRole;
     email: string;
+}
+export enum OrderPriority {
+    normal = "normal",
+    urgent = "urgent",
+    veryUrgent = "veryUrgent"
 }
 export enum OrderStatus {
     dispatched = "dispatched",
@@ -74,7 +98,7 @@ export interface backendInterface {
     addTransporter(name: string, contactNumber: string, city: City): Promise<Transporter>;
     addUser(name: string, email: string, role: UserRole, principalId: string): Promise<AppUser>;
     assignCallerUserRole(user: Principal, role: UserRole__1): Promise<void>;
-    createOrder(salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, createdBy: string): Promise<Order | null>;
+    createOrder(salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, createdBy: string, priority: OrderPriority): Promise<Order | null>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole__1>;
     getCustomer(id: bigint): Promise<Customer | null>;
@@ -86,6 +110,7 @@ export interface backendInterface {
         dispatchedToday: Array<Order>;
         pendingDispatch: bigint;
     }>;
+    getNotificationsForSalesperson(salesperson: string): Promise<Array<Notification>>;
     getOrder(id: bigint): Promise<Order | null>;
     getOrderStats(): Promise<{
         total: bigint;
@@ -99,12 +124,15 @@ export interface backendInterface {
     getPendingDispatchOrders(): Promise<Array<Order>>;
     getTransporter(id: bigint): Promise<Transporter | null>;
     getTransporters(): Promise<Array<Transporter>>;
+    getUnreadNotificationCount(salesperson: string): Promise<bigint>;
     getUserByEmail(email: string): Promise<AppUser | null>;
     getUserByPrincipal(principalText: string): Promise<AppUser | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getUsers(): Promise<Array<AppUser>>;
     isCallerAdmin(): Promise<boolean>;
+    markNotificationRead(id: bigint): Promise<void>;
     removeUser(id: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    updateOrderDispatch(id: bigint, lrNumber: string, dispatchDate: string, status: OrderStatus, billPhotoId: string, lrPhotoId: string, lastUpdatedBy: string): Promise<Order | null>;
+    updateOrderDispatch(id: bigint, lrNumber: string, dispatchDate: string, status: OrderStatus, billPhotoId: string, lrPhotoId: string, lastUpdatedBy: string, deliveredDate: string, invoiceDocId: string, packingListId: string, transportReceiptId: string, otherDocId: string): Promise<Order | null>;
+    updateOrderInfo(id: bigint, salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, priority: OrderPriority, lastUpdatedBy: string): Promise<Order | null>;
 }
