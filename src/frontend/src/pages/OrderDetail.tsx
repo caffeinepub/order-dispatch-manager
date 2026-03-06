@@ -32,7 +32,6 @@ import {
   Eye,
   FilePlus,
   FileText,
-  ImageIcon,
   Loader2,
   Lock,
   MessageCircle,
@@ -82,24 +81,6 @@ function getTodayDateString(): string {
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-interface DetailRowProps {
-  label: string;
-  value: React.ReactNode;
-}
-
-function DetailRow({ label, value }: DetailRowProps) {
-  return (
-    <div className="flex items-start justify-between py-2.5 border-b border-border last:border-0 gap-3">
-      <span className="text-sm text-muted-foreground flex-shrink-0 w-32">
-        {label}
-      </span>
-      <span className="text-sm font-medium text-foreground text-right flex-1 min-w-0">
-        {value || <span className="text-muted-foreground text-xs">—</span>}
-      </span>
-    </div>
-  );
 }
 
 interface FlexibleUploadFieldProps {
@@ -868,6 +849,9 @@ export function OrderDetail() {
                 {order.orderNumber}
               </h1>
               <StatusBadge status={order.status} />
+              {order.priority && order.priority !== OrderPriority.normal && (
+                <PriorityBadge priority={order.priority} />
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {formatDateFromNano(order.orderDate)}
@@ -876,102 +860,143 @@ export function OrderDetail() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-lg px-4 py-5 space-y-4">
-        {/* Order Details Card */}
-        <section className="bg-card rounded-xl border border-border shadow-card p-4">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Order Details
-          </h2>
-          <div className="divide-y divide-border">
-            <DetailRow label="Order No." value={order.orderNumber} />
-            <DetailRow
-              label="Order Date"
-              value={formatDateFromNano(order.orderDate)}
-            />
-            <DetailRow label="Salesperson" value={order.salesperson} />
-            <DetailRow
-              label="Order Value"
-              value={
-                <span className="font-bold text-primary">
-                  {formatOrderValue(order.orderValue)}
-                </span>
-              }
-            />
-            <DetailRow
-              label="Priority"
-              value={
-                order.priority && order.priority !== OrderPriority.normal ? (
-                  <PriorityBadge priority={order.priority} />
-                ) : (
-                  <span className="text-muted-foreground text-xs">Normal</span>
-                )
-              }
-            />
-            {order.createdBy && (
-              <DetailRow label="Created By" value={order.createdBy} />
-            )}
-            {order.lastUpdatedBy && (
-              <DetailRow label="Updated By" value={order.lastUpdatedBy} />
-            )}
-            {order.lastUpdatedTime > BigInt(0) && (
-              <DetailRow
-                label="Last Updated"
-                value={formatDateTimeFromNano(order.lastUpdatedTime)}
-              />
-            )}
+      <div className="mx-auto max-w-lg px-4 py-4 space-y-3">
+        {/* Combined Order + Customer + Transport Card */}
+        <section className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+          {/* Order value highlight */}
+          <div className="px-4 py-3 bg-secondary/60 border-b border-border flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Order Value</p>
+              <p className="text-xl font-display font-bold text-primary">
+                {formatOrderValue(order.orderValue)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Salesperson</p>
+              <p className="text-sm font-semibold text-foreground">
+                {order.salesperson}
+              </p>
+            </div>
           </div>
-        </section>
 
-        {/* Customer Card */}
-        <section className="bg-card rounded-xl border border-border shadow-card p-4">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Customer
-          </h2>
           <div className="divide-y divide-border">
-            <DetailRow label="Name" value={order.customerName} />
-            <DetailRow
-              label="Phone"
-              value={
+            {/* Customer */}
+            <div className="px-4 py-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Customer
+              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {order.customerName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {order.customerCity}
+                  </p>
+                </div>
                 <a
                   href={`tel:${order.customerPhone}`}
-                  className="text-primary underline underline-offset-2"
+                  className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 rounded-lg px-2.5 py-1.5"
                 >
                   {order.customerPhone}
                 </a>
-              }
-            />
-            <DetailRow label="City" value={order.customerCity} />
-          </div>
-        </section>
+              </div>
+            </div>
 
-        {/* Transport & Dispatch Card */}
-        <section className="bg-card rounded-xl border border-border shadow-card p-4">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Transport & Dispatch
-          </h2>
-          <div className="divide-y divide-border">
-            <DetailRow label="Transporter" value={order.transporterName} />
-            <DetailRow label="LR Number" value={order.lrNumber || null} />
-            <DetailRow
-              label="Dispatch Date"
-              value={order.dispatchDate || null}
-            />
-            {order.deliveredDate && (
-              <DetailRow label="Delivered Date" value={order.deliveredDate} />
+            {/* Transport */}
+            <div className="px-4 py-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Transport & Dispatch
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Transporter
+                  </span>
+                  <span className="text-sm font-medium text-foreground">
+                    {order.transporterName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    LR Number
+                  </span>
+                  <span className="text-sm font-medium text-foreground">
+                    {order.lrNumber || (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Dispatch Date
+                  </span>
+                  <span className="text-sm font-medium text-foreground">
+                    {order.dispatchDate || (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </span>
+                </div>
+                {order.deliveredDate && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      Delivered Date
+                    </span>
+                    <span className="text-sm font-medium text-foreground">
+                      {order.deliveredDate}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Notes */}
+            {order.notes && (
+              <div className="px-4 py-3">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                  Notes
+                </p>
+                <p className="text-sm text-foreground">{order.notes}</p>
+              </div>
+            )}
+
+            {/* Audit trail — collapsed at bottom */}
+            {(order.createdBy || order.lastUpdatedBy) && (
+              <div className="px-4 py-2.5 bg-secondary/40">
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                  {order.createdBy && (
+                    <span className="text-xs text-muted-foreground">
+                      Created by{" "}
+                      <span className="font-medium text-foreground">
+                        {order.createdBy}
+                      </span>
+                    </span>
+                  )}
+                  {order.lastUpdatedBy && order.lastUpdatedTime > BigInt(0) && (
+                    <span className="text-xs text-muted-foreground">
+                      Updated by{" "}
+                      <span className="font-medium text-foreground">
+                        {order.lastUpdatedBy}
+                      </span>{" "}
+                      · {formatDateTimeFromNano(order.lastUpdatedTime)}
+                    </span>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </section>
 
-        {/* Photos Card */}
+        {/* Photos Card — only when photos exist */}
         {(billPhotoUrl || lrPhotoUrl) && (
           <section className="bg-card rounded-xl border border-border shadow-card p-4">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               Photos
-            </h2>
+            </p>
             <div className="grid grid-cols-2 gap-3">
               {billPhotoUrl && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">
+                  <p className="text-xs text-muted-foreground mb-1.5">
                     Bill Photo
                   </p>
                   <a
@@ -982,14 +1007,16 @@ export function OrderDetail() {
                     <img
                       src={billPhotoUrl}
                       alt="Bill"
-                      className="w-full aspect-square object-cover rounded-lg border border-border"
+                      className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
                     />
                   </a>
                 </div>
               )}
               {lrPhotoUrl && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">LR Photo</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    LR Photo
+                  </p>
                   <a
                     href={lrPhotoUrl}
                     target="_blank"
@@ -998,76 +1025,46 @@ export function OrderDetail() {
                     <img
                       src={lrPhotoUrl}
                       alt="LR"
-                      className="w-full aspect-square object-cover rounded-lg border border-border"
+                      className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
                     />
                   </a>
                 </div>
               )}
-              {!billPhotoUrl && (
-                <div className="flex flex-col items-center justify-center aspect-square rounded-lg border border-dashed border-border bg-secondary">
-                  <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
-                  <p className="text-xs text-muted-foreground mt-1">No bill</p>
-                </div>
-              )}
-              {!lrPhotoUrl && (
-                <div className="flex flex-col items-center justify-center aspect-square rounded-lg border border-dashed border-border bg-secondary">
-                  <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
-                  <p className="text-xs text-muted-foreground mt-1">No LR</p>
-                </div>
-              )}
             </div>
           </section>
         )}
 
-        {/* Attachments Card — show stored other document */}
-        {(attachmentUrls.other || order.otherDocId) && (
+        {/* Other Attachments */}
+        {order.otherDocId && (
           <section className="bg-card rounded-xl border border-border shadow-card p-4">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Paperclip className="h-3.5 w-3.5" />
               Attachments
-            </h2>
-            <div className="space-y-2">
-              {order.otherDocId && (
-                <div className="flex items-center gap-3">
-                  {attachmentUrls.other ? (
-                    <a
-                      href={attachmentUrls.other}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-primary hover:underline"
-                    >
-                      <FileText className="h-4 w-4 flex-shrink-0" />
-                      Other Document
-                    </a>
-                  ) : (
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="h-4 w-4 flex-shrink-0" />
-                      Other Document
-                    </span>
-                  )}
-                  <span className="text-xs text-green-600 font-medium flex items-center gap-1 ml-auto">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Uploaded
-                  </span>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Notes */}
-        {order.notes && (
-          <section className="bg-card rounded-xl border border-border shadow-card p-4">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-              Notes
-            </h2>
-            <p className="text-sm text-foreground">{order.notes}</p>
+            </p>
+            {attachmentUrls.other ? (
+              <a
+                href={attachmentUrls.other}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-primary hover:underline"
+              >
+                <FileText className="h-4 w-4 flex-shrink-0" />
+                Other Document
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600 ml-auto" />
+              </a>
+            ) : (
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4 flex-shrink-0" />
+                Other Document
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600 ml-auto" />
+              </span>
+            )}
           </section>
         )}
 
         {/* Update Dispatch Section */}
         <section className="bg-card rounded-xl border border-border shadow-card p-4">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          <h2 className="text-sm font-semibold text-foreground mb-4">
             Update Dispatch
           </h2>
 

@@ -15,7 +15,6 @@ import {
   Bell,
   Loader2,
   LogOut,
-  Settings,
   ShieldCheck,
   ShieldX,
   Truck,
@@ -304,7 +303,18 @@ function LoginScreen() {
 // ─── Access Denied Screen ────────────────────────────────────────────────────
 
 function AccessDeniedScreen() {
-  const { clear } = useInternetIdentity();
+  const { clear, identity } = useInternetIdentity();
+  const [copied, setCopied] = useState(false);
+
+  const principalId = identity?.getPrincipal().toString() ?? "";
+
+  function handleCopy() {
+    if (!principalId) return;
+    void navigator.clipboard.writeText(principalId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
@@ -315,10 +325,34 @@ function AccessDeniedScreen() {
         <h1 className="text-2xl font-display font-bold text-foreground mb-2">
           Access Denied
         </h1>
-        <p className="text-sm text-muted-foreground mb-8">
-          Your account is not registered in the system. Please contact your
-          administrator.
+        <p className="text-sm text-muted-foreground mb-6">
+          Your account is not registered in the system. Share your Principal ID
+          below with the administrator to get access.
         </p>
+
+        {principalId && (
+          <div className="bg-card border border-border rounded-xl p-4 mb-6 text-left space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Your Principal ID
+            </p>
+            <p
+              data-ocid="auth.access_denied.principal_id"
+              className="text-xs font-mono text-foreground break-all leading-relaxed"
+            >
+              {principalId}
+            </p>
+            <Button
+              data-ocid="auth.access_denied.copy_button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              className="w-full mt-1 rounded-lg text-xs font-semibold h-9"
+            >
+              {copied ? "Copied!" : "Copy Principal ID"}
+            </Button>
+          </div>
+        )}
+
         <Button
           data-ocid="auth.access_denied.logout_button"
           onClick={clear}
@@ -357,22 +391,8 @@ function NotificationBell() {
   );
 }
 
-function SettingsLink() {
-  const { isAdmin } = useCurrentUser();
-  if (!isAdmin) return null;
-  return (
-    <Link
-      to="/settings"
-      data-ocid="nav.settings.link"
-      className="relative flex items-center justify-center w-8 h-8 rounded-lg hover:bg-secondary transition-colors"
-    >
-      <Settings className="h-4 w-4 text-muted-foreground" />
-    </Link>
-  );
-}
-
 function AppShellInner() {
-  const { identity, clear, isInitializing } = useInternetIdentity();
+  const { identity, isInitializing } = useInternetIdentity();
   const { currentUser, isLoadingUser } = useCurrentUser();
   const { actor, isFetching: isActorFetching } = useActor();
 
@@ -474,22 +494,9 @@ function AppShellInner() {
 
   return (
     <div className="relative">
-      {/* Top-right actions — notifications bell + settings + logout (wider screens) */}
+      {/* Top-right — notifications bell only */}
       <div className="fixed top-3 right-4 z-50 flex items-center gap-1">
-        <SettingsLink />
         <NotificationBell />
-        <div className="hidden sm:block">
-          <Button
-            data-ocid="auth.logout_button"
-            variant="ghost"
-            size="sm"
-            onClick={clear}
-            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <LogOut className="h-3.5 w-3.5 mr-1" />
-            Logout
-          </Button>
-        </div>
       </div>
 
       <Outlet />

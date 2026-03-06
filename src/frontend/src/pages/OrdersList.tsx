@@ -88,15 +88,15 @@ function OrderCard({ order, index }: OrderCardProps) {
       data-ocid={`orders.item.${index}`}
       className={cn(
         "w-full text-left bg-card rounded-xl border border-border shadow-card",
-        "p-4 active:scale-[0.99] transition-transform duration-100",
+        "px-4 py-3.5 active:scale-[0.99] transition-transform duration-100",
         "card-interactive",
       )}
       onClick={() => void navigate({ to: `/orders/${order.id.toString()}` })}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-xs font-semibold text-primary font-display">
+            <span className="text-xs font-bold text-primary font-display tracking-tight">
               {order.orderNumber}
             </span>
             <StatusBadge status={order.status} />
@@ -105,23 +105,24 @@ function OrderCard({ order, index }: OrderCardProps) {
           <p className="font-semibold text-sm text-foreground truncate">
             {order.customerName}
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {order.transporterName} • {order.salesperson}
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {order.transporterName}
+            {order.salesperson && (
+              <span className="text-muted-foreground/60">
+                {" "}
+                · {order.salesperson}
+              </span>
+            )}
           </p>
         </div>
-        <div className="flex-shrink-0 flex flex-col items-end gap-1">
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        <div className="flex-shrink-0 flex flex-col items-end gap-1 ml-2">
+          <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
           <span className="text-xs text-muted-foreground">
             {formatDate(order.orderDate)}
           </span>
           <OrderAgeBadge orderDate={order.orderDate} />
         </div>
       </div>
-      {order.dispatchDate && (
-        <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
-          Dispatch: {order.dispatchDate}
-        </p>
-      )}
     </button>
   );
 }
@@ -212,7 +213,7 @@ export function OrdersList() {
               <Link
                 to="/orders/new"
                 data-ocid="orders.new_order.button"
-                className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold touch-target active:scale-95 transition-transform"
+                className="flex items-center gap-1.5 rounded-xl bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold touch-target active:scale-95 transition-transform shadow-card"
               >
                 <Plus className="h-4 w-4" />
                 New
