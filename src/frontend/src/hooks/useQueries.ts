@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AppUser,
+  CompanySettings,
   Customer,
   Notification,
   Order,
@@ -266,6 +267,7 @@ export function useUpdateOrderDispatch() {
       packingListId,
       transportReceiptId,
       otherDocId,
+      dispatchPdfId,
     }: {
       id: bigint;
       lrNumber: string;
@@ -279,6 +281,7 @@ export function useUpdateOrderDispatch() {
       packingListId: string;
       transportReceiptId: string;
       otherDocId: string;
+      dispatchPdfId: string;
     }) => {
       if (!actor) throw new Error("Not connected");
       const result = await actor.updateOrderDispatch(
@@ -294,6 +297,7 @@ export function useUpdateOrderDispatch() {
         packingListId,
         transportReceiptId,
         otherDocId,
+        dispatchPdfId,
       );
       if (!result) throw new Error("Order not found");
       return result;
@@ -407,6 +411,52 @@ export function useRemoveUser() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["appUsers"] });
+    },
+  });
+}
+
+// ─── Company Settings ─────────────────────────────────────────────────────────
+
+export function useCompanySettings() {
+  const { actor, isFetching } = useActor();
+  return useQuery<CompanySettings | null>({
+    queryKey: ["companySettings"],
+    queryFn: async () => {
+      if (!actor) return null;
+      return actor.getCompanySettings();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSaveCompanySettings() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      companyName,
+      companyPhone,
+      companyEmail,
+      companyAddress,
+      companyLogoId,
+    }: {
+      companyName: string;
+      companyPhone: string;
+      companyEmail: string;
+      companyAddress: string;
+      companyLogoId: string;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.saveCompanySettings(
+        companyName,
+        companyPhone,
+        companyEmail,
+        companyAddress,
+        companyLogoId,
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["companySettings"] });
     },
   });
 }

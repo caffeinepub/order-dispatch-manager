@@ -15,6 +15,7 @@ import {
   Bell,
   Loader2,
   LogOut,
+  Settings,
   ShieldCheck,
   ShieldX,
   Truck,
@@ -26,6 +27,7 @@ import { useActor } from "./hooks/useActor";
 import { CurrentUserProvider, useCurrentUser } from "./hooks/useCurrentUser";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useUnreadNotificationCount } from "./hooks/useQueries";
+import { CompanySettings } from "./pages/CompanySettings";
 import { Customers } from "./pages/Customers";
 import { Dashboard } from "./pages/Dashboard";
 import { NewOrder } from "./pages/NewOrder";
@@ -355,6 +357,20 @@ function NotificationBell() {
   );
 }
 
+function SettingsLink() {
+  const { isAdmin } = useCurrentUser();
+  if (!isAdmin) return null;
+  return (
+    <Link
+      to="/settings"
+      data-ocid="nav.settings.link"
+      className="relative flex items-center justify-center w-8 h-8 rounded-lg hover:bg-secondary transition-colors"
+    >
+      <Settings className="h-4 w-4 text-muted-foreground" />
+    </Link>
+  );
+}
+
 function AppShellInner() {
   const { identity, clear, isInitializing } = useInternetIdentity();
   const { currentUser, isLoadingUser } = useCurrentUser();
@@ -440,8 +456,9 @@ function AppShellInner() {
 
   return (
     <div className="relative">
-      {/* Top-right actions — notifications bell + logout (wider screens) */}
+      {/* Top-right actions — notifications bell + settings + logout (wider screens) */}
       <div className="fixed top-3 right-4 z-50 flex items-center gap-1">
+        <SettingsLink />
         <NotificationBell />
         <div className="hidden sm:block">
           <Button
@@ -531,6 +548,12 @@ const notificationsRoute = createRoute({
   component: Notifications,
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: CompanySettings,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   ordersListRoute,
@@ -541,6 +564,7 @@ const routeTree = rootRoute.addChildren([
   pendingDispatchRoute,
   usersRoute,
   notificationsRoute,
+  settingsRoute,
 ]);
 
 const router = createRouter({ routeTree });

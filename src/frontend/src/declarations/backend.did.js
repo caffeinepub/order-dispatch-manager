@@ -61,6 +61,7 @@ export const Order = IDL.Record({
   'id' : IDL.Nat,
   'customerName' : IDL.Text,
   'status' : OrderStatus,
+  'dispatchPdfId' : IDL.Text,
   'billPhotoId' : IDL.Text,
   'customerPhone' : IDL.Text,
   'salesperson' : IDL.Text,
@@ -89,6 +90,13 @@ export const UserProfile = IDL.Record({
   'name' : IDL.Text,
   'role' : UserRole,
   'email' : IDL.Text,
+});
+export const CompanySettings = IDL.Record({
+  'companyLogoId' : IDL.Text,
+  'companyEmail' : IDL.Text,
+  'companyName' : IDL.Text,
+  'companyPhone' : IDL.Text,
+  'companyAddress' : IDL.Text,
 });
 export const Notification = IDL.Record({
   'id' : IDL.Nat,
@@ -151,6 +159,7 @@ export const idlService = IDL.Service({
     ),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole__1], ['query']),
+  'getCompanySettings' : IDL.Func([], [IDL.Opt(CompanySettings)], ['query']),
   'getCustomer' : IDL.Func([IDL.Nat], [IDL.Opt(Customer)], ['query']),
   'getCustomers' : IDL.Func([], [IDL.Vec(Customer)], ['query']),
   'getDailyDispatchReport' : IDL.Func(
@@ -204,12 +213,18 @@ export const idlService = IDL.Service({
   'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
   'removeUser' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'saveCompanySettings' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [CompanySettings],
+      [],
+    ),
   'updateOrderDispatch' : IDL.Func(
       [
         IDL.Nat,
         IDL.Text,
         IDL.Text,
         OrderStatus,
+        IDL.Text,
         IDL.Text,
         IDL.Text,
         IDL.Text,
@@ -294,6 +309,7 @@ export const idlFactory = ({ IDL }) => {
     'id' : IDL.Nat,
     'customerName' : IDL.Text,
     'status' : OrderStatus,
+    'dispatchPdfId' : IDL.Text,
     'billPhotoId' : IDL.Text,
     'customerPhone' : IDL.Text,
     'salesperson' : IDL.Text,
@@ -322,6 +338,13 @@ export const idlFactory = ({ IDL }) => {
     'name' : IDL.Text,
     'role' : UserRole,
     'email' : IDL.Text,
+  });
+  const CompanySettings = IDL.Record({
+    'companyLogoId' : IDL.Text,
+    'companyEmail' : IDL.Text,
+    'companyName' : IDL.Text,
+    'companyPhone' : IDL.Text,
+    'companyAddress' : IDL.Text,
   });
   const Notification = IDL.Record({
     'id' : IDL.Nat,
@@ -388,6 +411,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole__1], ['query']),
+    'getCompanySettings' : IDL.Func([], [IDL.Opt(CompanySettings)], ['query']),
     'getCustomer' : IDL.Func([IDL.Nat], [IDL.Opt(Customer)], ['query']),
     'getCustomers' : IDL.Func([], [IDL.Vec(Customer)], ['query']),
     'getDailyDispatchReport' : IDL.Func(
@@ -441,12 +465,18 @@ export const idlFactory = ({ IDL }) => {
     'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
     'removeUser' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'saveCompanySettings' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [CompanySettings],
+        [],
+      ),
     'updateOrderDispatch' : IDL.Func(
         [
           IDL.Nat,
           IDL.Text,
           IDL.Text,
           OrderStatus,
+          IDL.Text,
           IDL.Text,
           IDL.Text,
           IDL.Text,

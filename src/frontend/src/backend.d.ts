@@ -14,17 +14,11 @@ export interface Customer {
     phone: string;
 }
 export type City = string;
-export interface AppUser {
-    id: bigint;
-    name: string;
-    role: UserRole;
-    email: string;
-    principalId: string;
-}
 export interface Order {
     id: bigint;
     customerName: string;
     status: OrderStatus;
+    dispatchPdfId: string;
     billPhotoId: string;
     customerPhone: string;
     salesperson: string;
@@ -49,6 +43,13 @@ export interface Order {
     transporterName: string;
     customerCity: City;
 }
+export interface AppUser {
+    id: bigint;
+    name: string;
+    role: UserRole;
+    email: string;
+    principalId: string;
+}
 export interface Transporter {
     id: bigint;
     city: City;
@@ -66,6 +67,13 @@ export interface Notification {
     lrNumber: string;
     orderNumber: string;
     transporterName: string;
+}
+export interface CompanySettings {
+    companyLogoId: string;
+    companyEmail: string;
+    companyName: string;
+    companyPhone: string;
+    companyAddress: string;
 }
 export interface UserProfile {
     name: string;
@@ -102,6 +110,7 @@ export interface backendInterface {
     createOrder(salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, createdBy: string, priority: OrderPriority): Promise<Order | null>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole__1>;
+    getCompanySettings(): Promise<CompanySettings | null>;
     getCustomer(id: bigint): Promise<Customer | null>;
     getCustomers(): Promise<Array<Customer>>;
     getDailyDispatchReport(): Promise<{
@@ -135,6 +144,7 @@ export interface backendInterface {
     markNotificationRead(id: bigint): Promise<void>;
     removeUser(id: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    updateOrderDispatch(id: bigint, lrNumber: string, dispatchDate: string, status: OrderStatus, billPhotoId: string, lrPhotoId: string, lastUpdatedBy: string, deliveredDate: string, invoiceDocId: string, packingListId: string, transportReceiptId: string, otherDocId: string): Promise<Order | null>;
+    saveCompanySettings(companyName: string, companyPhone: string, companyEmail: string, companyAddress: string, companyLogoId: string): Promise<CompanySettings>;
+    updateOrderDispatch(id: bigint, lrNumber: string, dispatchDate: string, status: OrderStatus, billPhotoId: string, lrPhotoId: string, lastUpdatedBy: string, deliveredDate: string, invoiceDocId: string, packingListId: string, transportReceiptId: string, otherDocId: string, dispatchPdfId: string): Promise<Order | null>;
     updateOrderInfo(id: bigint, salesperson: string, customerId: bigint, transporterId: bigint, orderValue: number, notes: string, priority: OrderPriority, lastUpdatedBy: string): Promise<Order | null>;
 }

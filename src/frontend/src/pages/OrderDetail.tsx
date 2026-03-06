@@ -15,6 +15,7 @@ import { loadConfig } from "@/config";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import {
+  useCompanySettings,
   useOrder,
   useUpdateOrderDispatch,
   useUpdateOrderInfo,
@@ -23,9 +24,13 @@ import { cn } from "@/lib/utils";
 import { StorageClient } from "@/utils/StorageClient";
 import { HttpAgent } from "@icp-sdk/core/agent";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import jsPDF from "jspdf";
 import {
   ArrowLeft,
   CheckCircle2,
+  Download,
+  Eye,
+  FilePlus,
   FileText,
   ImageIcon,
   Loader2,
@@ -245,6 +250,7 @@ export function OrderDetail() {
   const { data: order, isLoading, error } = useOrder(orderId);
   const updateOrder = useUpdateOrderDispatch();
   const updateOrderInfo = useUpdateOrderInfo();
+  const { data: companySettings } = useCompanySettings();
 
   // Whether this order is locked for staff
   const isDispatchedLocked =
@@ -261,26 +267,19 @@ export function OrderDetail() {
   const [priority, setPriority] = useState<OrderPriority>(OrderPriority.normal);
   const [billPhotoId, setBillPhotoId] = useState("");
   const [lrPhotoId, setLrPhotoId] = useState("");
-  const [invoiceDocId, setInvoiceDocId] = useState("");
-  const [packingListId, setPackingListId] = useState("");
-  const [transportReceiptId, setTransportReceiptId] = useState("");
   const [otherDocId, setOtherDocId] = useState("");
   const [uploadingBill, setUploadingBill] = useState(false);
   const [uploadingLr, setUploadingLr] = useState(false);
-  const [uploadingInvoice, setUploadingInvoice] = useState(false);
-  const [uploadingPackingList, setUploadingPackingList] = useState(false);
-  const [uploadingTransportReceipt, setUploadingTransportReceipt] =
-    useState(false);
   const [uploadingOtherDoc, setUploadingOtherDoc] = useState(false);
   const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(null);
   const [lrPhotoUrl, setLrPhotoUrl] = useState<string | null>(null);
+  const [dispatchPdfId, setDispatchPdfId] = useState("");
+  const [dispatchPdfUrl, setDispatchPdfUrl] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   // Attachment URLs for display in the Attachments card
   const [attachmentUrls, setAttachmentUrls] = useState<{
-    invoice: string | null;
-    packingList: string | null;
-    transportReceipt: string | null;
     other: string | null;
-  }>({ invoice: null, packingList: null, transportReceipt: null, other: null });
+  }>({ other: null });
 
   // Sync form state when order loads
   useEffect(() => {
@@ -291,11 +290,9 @@ export function OrderDetail() {
       setStatus(order.status ?? OrderStatus.pendingDispatch);
       setBillPhotoId(order.billPhotoId ?? "");
       setLrPhotoId(order.lrPhotoId ?? "");
-      setInvoiceDocId(order.invoiceDocId ?? "");
-      setPackingListId(order.packingListId ?? "");
-      setTransportReceiptId(order.transportReceiptId ?? "");
       setOtherDocId(order.otherDocId ?? "");
       setPriority(order.priority ?? OrderPriority.normal);
+      setDispatchPdfId(order.dispatchPdfId ?? "");
     }
   }, [order]);
 
@@ -312,14 +309,7 @@ export function OrderDetail() {
     let cancelled = false;
 
     const loadUrls = async () => {
-      const idsToLoad = [
-        billPhotoId,
-        lrPhotoId,
-        invoiceDocId,
-        packingListId,
-        transportReceiptId,
-        otherDocId,
-      ];
+      const idsToLoad = [billPhotoId, lrPhotoId, otherDocId, dispatchPdfId];
       if (!idsToLoad.some(Boolean)) return;
 
       try {
@@ -345,25 +335,20 @@ export function OrderDetail() {
           }
         };
 
-        const [billUrl, lrUrl, invoiceUrl, packingUrl, transportUrl, otherUrl] =
-          await Promise.all([
-            loadUrl(billPhotoId),
-            loadUrl(lrPhotoId),
-            loadUrl(invoiceDocId),
-            loadUrl(packingListId),
-            loadUrl(transportReceiptId),
-            loadUrl(otherDocId),
-          ]);
+        const [billUrl, lrUrl, otherUrl, pdfUrl] = await Promise.all([
+          loadUrl(billPhotoId),
+          loadUrl(lrPhotoId),
+          loadUrl(otherDocId),
+          loadUrl(dispatchPdfId),
+        ]);
 
         if (!cancelled) {
           setBillPhotoUrl(billUrl);
           setLrPhotoUrl(lrUrl);
           setAttachmentUrls({
-            invoice: invoiceUrl,
-            packingList: packingUrl,
-            transportReceipt: transportUrl,
             other: otherUrl,
           });
+          setDispatchPdfUrl(pdfUrl);
         }
       } catch {
         // ignore config load error
@@ -374,15 +359,7 @@ export function OrderDetail() {
     return () => {
       cancelled = true;
     };
-  }, [
-    billPhotoId,
-    lrPhotoId,
-    invoiceDocId,
-    packingListId,
-    transportReceiptId,
-    otherDocId,
-    identity,
-  ]);
+  }, [billPhotoId, lrPhotoId, otherDocId, dispatchPdfId, identity]);
 
   const createStorageClient = async () => {
     const config = await loadConfig();
@@ -400,29 +377,294 @@ export function OrderDetail() {
     );
   };
 
-  type UploadType =
-    | "bill"
-    | "lr"
-    | "invoice"
-    | "packingList"
-    | "transportReceipt"
-    | "other";
+  // ─── PDF Generation ─────────────────────────────────────────────────────────
+
+  const fetchImageAsBase64 = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const generateDispatchPdf = async (): Promise<string> => {
+    if (!order) throw new Error("Order not found");
+    if (!identity) throw new Error("Please log in to generate PDF");
+
+    const storageClient = await createStorageClient();
+
+    // Load all images in parallel
+    let logoBase64: string | null = null;
+    let billBase64: string | null = null;
+    let lrBase64: string | null = null;
+
+    const [logoUrl, billUrl, lrUrl] = await Promise.all([
+      companySettings?.companyLogoId
+        ? storageClient
+            .getDirectURL(companySettings.companyLogoId)
+            .catch(() => null)
+        : Promise.resolve(null),
+      billPhotoId
+        ? storageClient.getDirectURL(billPhotoId).catch(() => null)
+        : Promise.resolve(billPhotoUrl),
+      lrPhotoId
+        ? storageClient.getDirectURL(lrPhotoId).catch(() => null)
+        : Promise.resolve(lrPhotoUrl),
+    ]);
+
+    if (logoUrl) logoBase64 = await fetchImageAsBase64(logoUrl);
+    if (billUrl) billBase64 = await fetchImageAsBase64(billUrl);
+    if (lrUrl) lrBase64 = await fetchImageAsBase64(lrUrl);
+
+    // ── Build PDF ────────────────────────────────────────────────────────────
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+    const pageW = 210;
+    const pageH = 297;
+    const marginL = 15;
+    const marginR = 15;
+    const contentW = pageW - marginL - marginR;
+    const footerH = 14;
+    const footerY = pageH - footerH;
+
+    const addFooter = (pageNum: number, totalPages: number) => {
+      pdf.setFillColor(248, 249, 250);
+      pdf.rect(0, footerY, pageW, footerH, "F");
+      pdf.setDrawColor(220, 220, 220);
+      pdf.line(marginL, footerY + 1, pageW - marginR, footerY + 1);
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(100, 100, 100);
+      const footerParts = [
+        companySettings?.companyPhone,
+        companySettings?.companyEmail,
+        companySettings?.companyAddress,
+      ].filter(Boolean);
+      const footerText =
+        footerParts.length > 0
+          ? footerParts.join("  |  ")
+          : (companySettings?.companyName ?? "Dispatch Details");
+      const footerLines = pdf.splitTextToSize(footerText, contentW);
+      pdf.text(footerLines[0] ?? footerText, pageW / 2, footerY + 5, {
+        align: "center",
+      });
+      if (footerLines.length > 1) {
+        pdf.text(footerLines[1], pageW / 2, footerY + 9, { align: "center" });
+      }
+      pdf.setFontSize(7);
+      pdf.text(
+        `Page ${pageNum} of ${totalPages}`,
+        pageW - marginR,
+        footerY + 5,
+        { align: "right" },
+      );
+    };
+
+    let curY = 15;
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    const logoSize = 22;
+    let headerTextX = marginL;
+
+    if (logoBase64) {
+      try {
+        pdf.addImage(logoBase64, "JPEG", marginL, curY - 2, logoSize, logoSize);
+        headerTextX = marginL + logoSize + 5;
+      } catch {
+        // ignore logo image error
+      }
+    }
+
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(30, 30, 30);
+    const companyNameText = companySettings?.companyName ?? "Company";
+    pdf.text(companyNameText, headerTextX, curY + 5);
+
+    pdf.setFontSize(11);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(90, 90, 90);
+    pdf.text("Dispatch Details", headerTextX, curY + 12);
+
+    curY = Math.max(curY + logoSize + 2, curY + 20);
+
+    // Divider line
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineWidth(0.5);
+    pdf.line(marginL, curY, pageW - marginR, curY);
+    curY += 8;
+
+    // ── Order Information ────────────────────────────────────────────────────
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(100, 100, 100);
+    pdf.text("ORDER INFORMATION", marginL, curY);
+    curY += 5;
+
+    const infoRows: [string, string][] = [
+      ["Order Number", order.orderNumber],
+      ["Order Date", formatDateFromNano(order.orderDate)],
+      ["Customer Name", order.customerName],
+      ["Customer Phone", order.customerPhone],
+      ["Transport Name", order.transporterName],
+      ["LR Number", lrNumber || order.lrNumber || "—"],
+      ["Dispatch Date", dispatchDate || order.dispatchDate || "—"],
+    ];
+
+    const rowH = 8;
+    const labelW = 55;
+
+    infoRows.forEach(([label, value], i) => {
+      const rowY = curY + i * rowH;
+      // Alternating row bg
+      if (i % 2 === 0) {
+        pdf.setFillColor(248, 249, 250);
+        pdf.rect(marginL, rowY - 4, contentW, rowH, "F");
+      }
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(80, 80, 80);
+      pdf.text(label, marginL + 3, rowY);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(30, 30, 30);
+      pdf.text(value, marginL + labelW, rowY);
+    });
+
+    curY += infoRows.length * rowH + 8;
+
+    // Border around info table
+    pdf.setDrawColor(220, 220, 220);
+    pdf.setLineWidth(0.3);
+    pdf.rect(
+      marginL,
+      curY - infoRows.length * rowH - 12,
+      contentW,
+      infoRows.length * rowH + 4,
+    );
+
+    const maxContentY = footerY - 5;
+
+    // ── Document Images ──────────────────────────────────────────────────────
+    const addDocImage = (title: string, base64: string | null) => {
+      if (!base64) return;
+
+      if (curY + 15 > maxContentY) {
+        pdf.addPage();
+        curY = 15;
+      }
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(30, 30, 30);
+      pdf.text(title, marginL, curY);
+      curY += 5;
+
+      try {
+        // Try to fit image with max height
+        const maxImgW = contentW;
+        const maxImgH = Math.min(maxContentY - curY - 5, 120);
+
+        // Create an in-memory image to get dimensions
+        const img = new Image();
+        img.src = base64;
+
+        let imgW = maxImgW;
+        let imgH = maxImgH;
+
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          const ratio = img.naturalWidth / img.naturalHeight;
+          imgW = Math.min(maxImgW, maxImgH * ratio);
+          imgH = imgW / ratio;
+          if (imgH > maxImgH) {
+            imgH = maxImgH;
+            imgW = imgH * ratio;
+          }
+        }
+
+        if (curY + imgH > maxContentY) {
+          pdf.addPage();
+          curY = 15;
+        }
+
+        pdf.addImage(base64, "JPEG", marginL, curY, imgW, imgH);
+        curY += imgH + 8;
+      } catch {
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "italic");
+        pdf.setTextColor(150, 150, 150);
+        pdf.text("(Image could not be loaded)", marginL, curY);
+        curY += 8;
+      }
+    };
+
+    if (billBase64 || lrBase64) {
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(100, 100, 100);
+      pdf.text("DOCUMENTS", marginL, curY);
+      curY += 5;
+
+      addDocImage("Bill Copy", billBase64);
+      addDocImage("LR Copy", lrBase64);
+    }
+
+    // ── Add footers to all pages ─────────────────────────────────────────────
+    const totalPages = pdf.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      pdf.setPage(p);
+      addFooter(p, totalPages);
+    }
+
+    // ── Upload PDF to storage ────────────────────────────────────────────────
+    const pdfArrayBuffer = pdf.output("arraybuffer");
+    const pdfBytes = new Uint8Array(pdfArrayBuffer);
+    const { hash } = await storageClient.putFile(pdfBytes);
+    return hash;
+  };
+
+  const handleGeneratePdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      const pdfId = await generateDispatchPdf();
+      setDispatchPdfId(pdfId);
+      // Load the new URL
+      try {
+        const storageClient = await createStorageClient();
+        const url = await storageClient.getDirectURL(pdfId);
+        setDispatchPdfUrl(url);
+      } catch {
+        // ignore URL load error
+      }
+      toast.success("Dispatch PDF generated successfully");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to generate PDF",
+      );
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  type UploadType = "bill" | "lr" | "other";
 
   const uploadFile = async (file: File, type: UploadType) => {
     const setUploadingMap: Record<UploadType, (v: boolean) => void> = {
       bill: setUploadingBill,
       lr: setUploadingLr,
-      invoice: setUploadingInvoice,
-      packingList: setUploadingPackingList,
-      transportReceipt: setUploadingTransportReceipt,
       other: setUploadingOtherDoc,
     };
     const labelMap: Record<UploadType, string> = {
       bill: "Bill photo",
       lr: "LR photo",
-      invoice: "Invoice document",
-      packingList: "Packing list",
-      transportReceipt: "Transport receipt",
       other: "Document",
     };
 
@@ -444,15 +686,6 @@ export function OrderDetail() {
           setStatus(OrderStatus.dispatched);
           setDispatchDate(getTodayDateString());
           toast.info("Status automatically set to Dispatched");
-          break;
-        case "invoice":
-          setInvoiceDocId(hash);
-          break;
-        case "packingList":
-          setPackingListId(hash);
-          break;
-        case "transportReceipt":
-          setTransportReceiptId(hash);
           break;
         case "other":
           setOtherDocId(hash);
@@ -480,10 +713,11 @@ export function OrderDetail() {
         lrPhotoId,
         lastUpdatedBy: currentUser?.email ?? "",
         deliveredDate,
-        invoiceDocId,
-        packingListId,
-        transportReceiptId,
+        invoiceDocId: "",
+        packingListId: "",
+        transportReceiptId: "",
         otherDocId,
+        dispatchPdfId,
       });
 
       // If priority changed, also update order info
@@ -732,68 +966,38 @@ export function OrderDetail() {
           </section>
         )}
 
-        {/* Attachments Card — show stored attachments */}
-        {(attachmentUrls.invoice ||
-          attachmentUrls.packingList ||
-          attachmentUrls.transportReceipt ||
-          attachmentUrls.other ||
-          order.invoiceDocId ||
-          order.packingListId ||
-          order.transportReceiptId ||
-          order.otherDocId) && (
+        {/* Attachments Card — show stored other document */}
+        {(attachmentUrls.other || order.otherDocId) && (
           <section className="bg-card rounded-xl border border-border shadow-card p-4">
             <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
               <Paperclip className="h-3.5 w-3.5" />
               Attachments
             </h2>
             <div className="space-y-2">
-              {[
-                {
-                  label: "Invoice Document",
-                  url: attachmentUrls.invoice,
-                  id: order.invoiceDocId,
-                },
-                {
-                  label: "Packing List",
-                  url: attachmentUrls.packingList,
-                  id: order.packingListId,
-                },
-                {
-                  label: "Transport Receipt",
-                  url: attachmentUrls.transportReceipt,
-                  id: order.transportReceiptId,
-                },
-                {
-                  label: "Other Document",
-                  url: attachmentUrls.other,
-                  id: order.otherDocId,
-                },
-              ]
-                .filter((item) => item.id)
-                .map((item) => (
-                  <div key={item.label} className="flex items-center gap-3">
-                    {item.url ? (
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-sm text-primary hover:underline"
-                      >
-                        <FileText className="h-4 w-4 flex-shrink-0" />
-                        {item.label}
-                      </a>
-                    ) : (
-                      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <FileText className="h-4 w-4 flex-shrink-0" />
-                        {item.label}
-                      </span>
-                    )}
-                    <span className="text-xs text-green-600 font-medium flex items-center gap-1 ml-auto">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Uploaded
+              {order.otherDocId && (
+                <div className="flex items-center gap-3">
+                  {attachmentUrls.other ? (
+                    <a
+                      href={attachmentUrls.other}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      <FileText className="h-4 w-4 flex-shrink-0" />
+                      Other Document
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FileText className="h-4 w-4 flex-shrink-0" />
+                      Other Document
                     </span>
-                  </div>
-                ))}
+                  )}
+                  <span className="text-xs text-green-600 font-medium flex items-center gap-1 ml-auto">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Uploaded
+                  </span>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -954,36 +1158,6 @@ export function OrderDetail() {
               previewUrl={lrPhotoUrl}
             />
 
-            {/* Invoice Document */}
-            <FlexibleUploadField
-              label="Invoice Document"
-              fileId={invoiceDocId}
-              isUploading={uploadingInvoice}
-              onUpload={(file) => void uploadFile(file, "invoice")}
-              ocid="order_detail.update.invoice_doc.upload_button"
-              previewUrl={attachmentUrls.invoice}
-            />
-
-            {/* Packing List */}
-            <FlexibleUploadField
-              label="Packing List"
-              fileId={packingListId}
-              isUploading={uploadingPackingList}
-              onUpload={(file) => void uploadFile(file, "packingList")}
-              ocid="order_detail.update.packing_list.upload_button"
-              previewUrl={attachmentUrls.packingList}
-            />
-
-            {/* Transport Receipt */}
-            <FlexibleUploadField
-              label="Transport Receipt"
-              fileId={transportReceiptId}
-              isUploading={uploadingTransportReceipt}
-              onUpload={(file) => void uploadFile(file, "transportReceipt")}
-              ocid="order_detail.update.transport_receipt.upload_button"
-              previewUrl={attachmentUrls.transportReceipt}
-            />
-
             {/* Other Documents */}
             <FlexibleUploadField
               label="Other Documents"
@@ -993,6 +1167,36 @@ export function OrderDetail() {
               ocid="order_detail.update.other_doc.upload_button"
               previewUrl={attachmentUrls.other}
             />
+
+            {/* Generate & Save Dispatch PDF */}
+            <div className="space-y-2">
+              <Button
+                type="button"
+                data-ocid="order_detail.generate_pdf.button"
+                variant="outline"
+                onClick={() => void handleGeneratePdf()}
+                disabled={generatingPdf}
+                className="w-full h-11 font-semibold rounded-xl border-dashed border-2"
+              >
+                {generatingPdf ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <FilePlus className="mr-2 h-4 w-4" />
+                    Generate &amp; Save Dispatch PDF
+                  </>
+                )}
+              </Button>
+              {dispatchPdfId && !generatingPdf && (
+                <p className="text-xs text-green-600 text-center flex items-center justify-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  PDF saved — click Save Changes to link it to this order
+                </p>
+              )}
+            </div>
 
             {/* Save Button */}
             <Button
@@ -1012,20 +1216,68 @@ export function OrderDetail() {
 
         {/* WhatsApp Button */}
         {canSendWhatsApp && (
-          <button
-            type="button"
-            data-ocid="order_detail.whatsapp.button"
-            onClick={handleWhatsApp}
-            className={cn(
-              "w-full flex items-center justify-center gap-3 rounded-xl",
-              "bg-[#25D366] text-white font-semibold text-base",
-              "h-12 shadow-card",
-              "active:scale-[0.98] transition-transform duration-100",
+          <div className="space-y-2">
+            <button
+              type="button"
+              data-ocid="order_detail.whatsapp.button"
+              onClick={handleWhatsApp}
+              className={cn(
+                "w-full flex items-center justify-center gap-3 rounded-xl",
+                "bg-[#25D366] text-white font-semibold text-base",
+                "h-12 shadow-card",
+                "active:scale-[0.98] transition-transform duration-100",
+              )}
+            >
+              <MessageCircle className="h-5 w-5" />
+              Send Dispatch Details to Customer
+            </button>
+            {dispatchPdfId && (
+              <p className="text-xs text-center text-muted-foreground">
+                Dispatch PDF ready — attach it in WhatsApp before sending.
+              </p>
             )}
-          >
-            <MessageCircle className="h-5 w-5" />
-            Send Dispatch Details to Customer
-          </button>
+          </div>
+        )}
+
+        {/* PDF View / Download */}
+        {dispatchPdfId && dispatchPdfUrl && (
+          <section className="bg-card rounded-xl border border-border shadow-card p-4">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Dispatch PDF
+            </h2>
+            <div className="flex gap-3">
+              <a
+                href={dispatchPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-ocid="order_detail.view_pdf.button"
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 rounded-xl",
+                  "border border-border bg-secondary text-foreground",
+                  "h-11 text-sm font-semibold",
+                  "hover:bg-secondary/80 transition-colors",
+                )}
+              >
+                <Eye className="h-4 w-4" />
+                View PDF
+              </a>
+              <a
+                href={dispatchPdfUrl}
+                download={`dispatch-${order?.orderNumber ?? "pdf"}.pdf`}
+                data-ocid="order_detail.download_pdf.button"
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 rounded-xl",
+                  "border border-border bg-secondary text-foreground",
+                  "h-11 text-sm font-semibold",
+                  "hover:bg-secondary/80 transition-colors",
+                )}
+              >
+                <Download className="h-4 w-4" />
+                Download PDF
+              </a>
+            </div>
+          </section>
         )}
       </div>
     </main>

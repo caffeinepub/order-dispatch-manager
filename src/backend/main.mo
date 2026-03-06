@@ -13,6 +13,8 @@ import Storage "blob-storage/Storage";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
+
+
 actor {
   // Type Definitions
   type City = Text;
@@ -85,6 +87,7 @@ actor {
     otherDocId : Text;
     priority : OrderPriority;
     lastUpdatedTime : Int;
+    dispatchPdfId : Text;
   };
 
   public type Notification = {
@@ -106,6 +109,14 @@ actor {
     role : UserRole;
   };
 
+  public type CompanySettings = {
+    companyName : Text;
+    companyPhone : Text;
+    companyEmail : Text;
+    companyAddress : Text;
+    companyLogoId : Text;
+  };
+
   // Persistent State Variables
   var nextCustomerId = 1;
   var nextTransporterId = 1;
@@ -114,6 +125,7 @@ actor {
   var dailyOrderSequence = 1;
   var lastOrderDate = "";
   var nextNotificationId = 1;
+  var companySettings : ?CompanySettings = null;
 
   let customers = Map.empty<Nat, Customer>();
   let transporters = Map.empty<Nat, Transporter>();
@@ -345,6 +357,7 @@ actor {
       otherDocId = "";
       priority;
       lastUpdatedTime = now;
+      dispatchPdfId = ""; // new field
     };
     orders.add(nextOrderId, order);
     nextOrderId += 1;
@@ -487,6 +500,7 @@ actor {
           packingListId = existingOrder.packingListId;
           transportReceiptId = existingOrder.transportReceiptId;
           otherDocId = existingOrder.otherDocId;
+          dispatchPdfId = existingOrder.dispatchPdfId; // preserve this also
         };
 
         orders.add(id, updatedOrder);
@@ -508,7 +522,8 @@ actor {
     invoiceDocId : Text,
     packingListId : Text,
     transportReceiptId : Text,
-    otherDocId : Text
+    otherDocId : Text,
+    dispatchPdfId : Text,
   ) : async ?Order {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update orders");
@@ -556,6 +571,7 @@ actor {
           otherDocId;
           priority = order.priority;
           lastUpdatedTime = Time.now();
+          dispatchPdfId; // save new dispatch ID from parameter
         };
 
         // Check for newly dispatched status to create notification
@@ -720,4 +736,36 @@ actor {
       dispatchedToday = dispatchedTodayList;
     };
   };
+
+  // NEW COMPANY SETTINGS FUNCTIONS (admin only)
+  public query ({ caller }) func getCompanySettings() : async ?CompanySettings {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view company settings");
+    };
+    companySettings;
+  };
+
+  public shared ({ caller }) func saveCompanySettings(
+    companyName : Text,
+    companyPhone : Text,
+    companyEmail : Text,
+    companyAddress : Text,
+    companyLogoId : Text,
+  ) : async CompanySettings {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Only admins can save company settings");
+    };
+
+    // validation can be added here if needed
+    let newSettings : CompanySettings = {
+      companyName;
+      companyPhone;
+      companyEmail;
+      companyAddress;
+      companyLogoId;
+    };
+    companySettings := ?newSettings;
+    newSettings;
+  };
+
 };

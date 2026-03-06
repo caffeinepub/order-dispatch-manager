@@ -18,6 +18,13 @@ export interface AppUser {
   'principalId' : string,
 }
 export type City = string;
+export interface CompanySettings {
+  'companyLogoId' : string,
+  'companyEmail' : string,
+  'companyName' : string,
+  'companyPhone' : string,
+  'companyAddress' : string,
+}
 export interface Customer {
   'id' : bigint,
   'city' : City,
@@ -40,6 +47,7 @@ export interface Order {
   'id' : bigint,
   'customerName' : string,
   'status' : OrderStatus,
+  'dispatchPdfId' : string,
   'billPhotoId' : string,
   'customerPhone' : string,
   'salesperson' : string,
@@ -127,6 +135,7 @@ export interface _SERVICE {
   >,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole__1>,
+  'getCompanySettings' : ActorMethod<[], [] | [CompanySettings]>,
   'getCustomer' : ActorMethod<[bigint], [] | [Customer]>,
   'getCustomers' : ActorMethod<[], Array<Customer>>,
   'getDailyDispatchReport' : ActorMethod<
@@ -166,12 +175,17 @@ export interface _SERVICE {
   'markNotificationRead' : ActorMethod<[bigint], undefined>,
   'removeUser' : ActorMethod<[bigint], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'saveCompanySettings' : ActorMethod<
+    [string, string, string, string, string],
+    CompanySettings
+  >,
   'updateOrderDispatch' : ActorMethod<
     [
       bigint,
       string,
       string,
       OrderStatus,
+      string,
       string,
       string,
       string,

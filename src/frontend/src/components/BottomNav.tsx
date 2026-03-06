@@ -54,6 +54,7 @@ const baseNavItems: NavItem[] = [
     ocid: "nav.users.link",
     adminOnly: true,
   },
+
   {
     to: "/customers",
     icon: <Users className="h-5 w-5" />,
