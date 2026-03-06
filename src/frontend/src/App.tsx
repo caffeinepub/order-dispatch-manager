@@ -378,24 +378,41 @@ function AppShellInner() {
 
   // Bootstrap check: does the system have any users yet?
   const [hasUsers, setHasUsers] = useState<boolean | null>(null);
-  const [isCheckingUsers, setIsCheckingUsers] = useState(true);
+  const [isCheckingUsers, setIsCheckingUsers] = useState(false);
 
   useEffect(() => {
-    if (!actor || isActorFetching) return;
+    // If actor is not available yet, nothing to check — don't block UI
+    if (!actor || isActorFetching) {
+      setIsCheckingUsers(false);
+      return;
+    }
+
+    // Skip if we already know the answer
+    if (hasUsers !== null) return;
 
     let cancelled = false;
     setIsCheckingUsers(true);
+
+    // Safety timeout: if backend doesn't respond in 8s, assume users exist
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        setHasUsers(true);
+        setIsCheckingUsers(false);
+      }
+    }, 8000);
 
     void actor
       .hasUsers()
       .then((result) => {
         if (!cancelled) {
+          clearTimeout(timeout);
           setHasUsers(result);
           setIsCheckingUsers(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
+          clearTimeout(timeout);
           // If the call fails, assume users exist to avoid bypassing auth
           setHasUsers(true);
           setIsCheckingUsers(false);
@@ -404,8 +421,9 @@ function AppShellInner() {
 
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
-  }, [actor, isActorFetching]);
+  }, [actor, isActorFetching, hasUsers]);
 
   const isBooting = isInitializing || isActorFetching || isCheckingUsers;
 

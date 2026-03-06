@@ -274,8 +274,9 @@ export function OrderDetail() {
   const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(null);
   const [lrPhotoUrl, setLrPhotoUrl] = useState<string | null>(null);
   const [dispatchPdfId, setDispatchPdfId] = useState("");
-  const [dispatchPdfUrl, setDispatchPdfUrl] = useState<string | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [viewingPdf, setViewingPdf] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   // Attachment URLs for display in the Attachments card
   const [attachmentUrls, setAttachmentUrls] = useState<{
     other: string | null;
@@ -309,7 +310,7 @@ export function OrderDetail() {
     let cancelled = false;
 
     const loadUrls = async () => {
-      const idsToLoad = [billPhotoId, lrPhotoId, otherDocId, dispatchPdfId];
+      const idsToLoad = [billPhotoId, lrPhotoId, otherDocId];
       if (!idsToLoad.some(Boolean)) return;
 
       try {
@@ -335,11 +336,10 @@ export function OrderDetail() {
           }
         };
 
-        const [billUrl, lrUrl, otherUrl, pdfUrl] = await Promise.all([
+        const [billUrl, lrUrl, otherUrl] = await Promise.all([
           loadUrl(billPhotoId),
           loadUrl(lrPhotoId),
           loadUrl(otherDocId),
-          loadUrl(dispatchPdfId),
         ]);
 
         if (!cancelled) {
@@ -348,7 +348,6 @@ export function OrderDetail() {
           setAttachmentUrls({
             other: otherUrl,
           });
-          setDispatchPdfUrl(pdfUrl);
         }
       } catch {
         // ignore config load error
@@ -359,7 +358,7 @@ export function OrderDetail() {
     return () => {
       cancelled = true;
     };
-  }, [billPhotoId, lrPhotoId, otherDocId, dispatchPdfId, identity]);
+  }, [billPhotoId, lrPhotoId, otherDocId, identity]);
 
   const createStorageClient = async () => {
     const config = await loadConfig();
@@ -636,14 +635,6 @@ export function OrderDetail() {
     try {
       const pdfId = await generateDispatchPdf();
       setDispatchPdfId(pdfId);
-      // Load the new URL
-      try {
-        const storageClient = await createStorageClient();
-        const url = await storageClient.getDirectURL(pdfId);
-        setDispatchPdfUrl(url);
-      } catch {
-        // ignore URL load error
-      }
       toast.success("Dispatch PDF generated successfully");
     } catch (err) {
       toast.error(
@@ -651,6 +642,68 @@ export function OrderDetail() {
       );
     } finally {
       setGeneratingPdf(false);
+    }
+  };
+
+  const fetchPdfBlob = async (): Promise<Blob | null> => {
+    if (!dispatchPdfId) return null;
+    try {
+      const storageClient = await createStorageClient();
+      const url = await storageClient.getDirectURL(dispatchPdfId);
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const arrayBuffer = await resp.arrayBuffer();
+      return new Blob([arrayBuffer], { type: "application/pdf" });
+    } catch {
+      return null;
+    }
+  };
+
+  const handleViewPdf = async () => {
+    setViewingPdf(true);
+    try {
+      const blob = await fetchPdfBlob();
+      if (!blob) {
+        toast.error("Could not load PDF. Please try downloading instead.");
+        return;
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a short delay to free memory
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      toast.error("Failed to open PDF. Please try downloading instead.");
+    } finally {
+      setViewingPdf(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const blob = await fetchPdfBlob();
+      if (!blob) {
+        toast.error("Could not download PDF. Please try again.");
+        return;
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `dispatch-${order?.orderNumber ?? "pdf"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    } catch {
+      toast.error("Failed to download PDF. Please try again.");
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -1240,42 +1293,51 @@ export function OrderDetail() {
         )}
 
         {/* PDF View / Download */}
-        {dispatchPdfId && dispatchPdfUrl && (
+        {dispatchPdfId && (
           <section className="bg-card rounded-xl border border-border shadow-card p-4">
             <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5" />
               Dispatch PDF
             </h2>
             <div className="flex gap-3">
-              <a
-                href={dispatchPdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => void handleViewPdf()}
+                disabled={viewingPdf || downloadingPdf}
                 data-ocid="order_detail.view_pdf.button"
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 rounded-xl",
                   "border border-border bg-secondary text-foreground",
                   "h-11 text-sm font-semibold",
-                  "hover:bg-secondary/80 transition-colors",
+                  "hover:bg-secondary/80 transition-colors disabled:opacity-60",
                 )}
               >
-                <Eye className="h-4 w-4" />
-                View PDF
-              </a>
-              <a
-                href={dispatchPdfUrl}
-                download={`dispatch-${order?.orderNumber ?? "pdf"}.pdf`}
+                {viewingPdf ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                {viewingPdf ? "Loading..." : "View PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadPdf()}
+                disabled={viewingPdf || downloadingPdf}
                 data-ocid="order_detail.download_pdf.button"
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 rounded-xl",
                   "border border-border bg-secondary text-foreground",
                   "h-11 text-sm font-semibold",
-                  "hover:bg-secondary/80 transition-colors",
+                  "hover:bg-secondary/80 transition-colors disabled:opacity-60",
                 )}
               >
-                <Download className="h-4 w-4" />
-                Download PDF
-              </a>
+                {downloadingPdf ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {downloadingPdf ? "Downloading..." : "Download PDF"}
+              </button>
             </div>
           </section>
         )}
